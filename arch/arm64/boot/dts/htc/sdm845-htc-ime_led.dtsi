@@ -1,0 +1,77 @@
+&tlmm {
+	lp5521_init: lp5562_init {
+		mux {
+			pins ="gpio44";
+			function = "gpio";
+		};
+		conig {
+			pins ="gpio44";
+			drive-strength = <2>; // 2 MA
+			bias-disable; // No PULL
+			output-high;
+		};
+	};
+
+	fl_trig: fl_trig {
+		mux {
+			pins = "gpio22";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio22";
+			drive-strength = <2>; // 2 MA
+			bias-disable; // NO PULL
+			output-low;
+		};
+	};
+};
+
+&pmi8998_gpios {
+	gpio@c800 {
+		reg = <0xc800 0x100>;
+		qcom,pin-num = <9>;
+		qcom,mode = <1>;
+		output-low;
+		status = "okay";
+	};
+};
+
+&qupv3_se10_i2c {
+	status = "okay";
+
+	lp5562@30 {
+		compatible = "LP5562-LED";
+		reg = <0x30>;
+		lp5562,lp5562_en = <&tlmm 44 0x00>;
+		// lp5562,LED_3v3_en = <>; Use DC_in system power, don't need to config
+		lp5562,num_leds = <2>;
+		pinctrl-names = "lp5562_init";
+		pinctrl-0 = <&lp5521_init>;
+		lp5562,current_param = <20>;
+	};
+};
+
+&flash_led {
+	qcom,gpio-flash-strobe = <&pmi8998_gpios 9 0>;
+	pinctrl-names = "fl_trig";
+	pinctrl-0 = <&fl_trig>;
+};
+
+&pmi8998_flash0 {
+	qcom,duration-ms = <600>;
+};
+
+&pmi8998_flash1 {
+	qcom,duration-ms = <600>;
+};
+
+&pmi8998_flash2 {
+	qcom,duration-ms = <600>;
+};
+
+
+&pmi8998_switch1 {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+};

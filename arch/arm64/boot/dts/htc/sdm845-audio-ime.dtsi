@@ -1,0 +1,285 @@
+/* IME Audio Config */
+
+&tlmm {
+	/* AUD_MICLR_FLIP_EN */
+	miclr_flip_en_default: miclr_flip_en_default {
+		config {
+			pins = "gpio7";
+			function = "gpio";
+			drive-strength = <2>; /* 2mA */
+			bias-disable; /* No PULL */
+			output-low;
+		};
+	};
+
+	/* AUD_SPK_AMP_RST */
+	aud_spk_amp_rst_default: aud_spk_amp_rst_default {
+		config {
+			pins = "gpio28";
+			function = "gpio";
+			drive-strength = <2>; /* 2mA */
+			bias-disable; /* No PULL */
+			output-high;
+		};
+	};
+
+	/* AUD_MICLR_DGND_SW_EN */
+	miclr_dgnd_sw_en_default: miclr_dgnd_sw_en_default {
+		config {
+			pins = "gpio104";
+			function = "gpio";
+			drive-strength = <2>; /* 2mA */
+			bias-disable; /* No PULL */
+			output-low;
+		};
+	};
+
+	/* AUD_USB_POSITION */
+	aud_usb_position_default: aud_usb_position_default {
+		config {
+			pins = "gpio128";
+			function = "gpio";
+			drive-strength = <2>; /* 2mA */
+			bias-disable; /* No PULL */
+			input-enable;
+		};
+	};
+};
+
+&pm8998_gpios {
+	aud_tas2557_irq2 { /* AUD_TAS2557_IRQ2 */
+		aud_tas2557_irq2_default: aud_tas2557_irq2_default {
+			pins = "gpio1";
+			function = "normal";
+			input-enable;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	fsa4476_en1_ap { /* FSA4476_EN1_AP */
+		fsa4476_en1_ap_default: fsa4476_en1_ap_default {
+			pins = "gpio6";
+			function = "normal";
+			output-low;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	fsa4476_en2_ap { /* FSA4476_EN2_AP */
+		fsa4476_en2_ap_default: fsa4476_en2_ap_default {
+			pins = "gpio7";
+			function = "normal";
+			output-low;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	fsa4476_enn_ap { /* FSA4476_ENN_AP */
+		fsa4476_enn_ap_default: fsa4476_enn_ap_default {
+			pins = "gpio10";
+			function = "normal";
+			output-low;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	aud_typec_id1 { /* AUD_TYPEC_ID1 */
+		aud_typec_id1_default: aud_typec_id1_default {
+			pins = "gpio12";
+			function = "normal";
+			input-enable;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	aud_typec_id2 { /* AUD_TYPEC_ID2 */
+		aud_typec_id2_default: aud_typec_id2_default {
+			pins = "gpio13";
+			function = "normal";
+			input-enable;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	aud_hsmic_2v85_en { /* AUD_HSMIC_2V85_EN */
+		aud_hsmic_2v85_en_default: aud_hsmic_2v85_en_default {
+			pins = "gpio15";
+			function = "normal";
+			bias-disable;
+			output-low;
+			power-source = <0>;
+		};
+	};
+
+	aud_tas2557_irq1 { /* AUD_TAS2557_IRQ1 */
+		aud_tas2557_irq1_default: aud_tas2557_irq1_default {
+			pins = "gpio17";
+			function = "normal";
+			input-enable;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+};
+
+&pm8005_gpios {
+	aud_3v3_en { /* AUD_3V3_EN */
+		aud_3v3_en_default: aud_3v3_en_default {
+			pins = "gpio1";
+			function = "normal";
+			bias-disable;
+			output-high;
+			power-source = <0>;
+		};
+	};
+};
+
+/* HTC_AUD needs MSM GPIO#104 for htc,miclr_dgnd_sw_en
+   but it is occupied by PCIe1 in QCT original design.
+   Currently PCIe1 is not used by any function (QCT case 03158664)
+   So we disable PCIe1 here.
+ */
+&pcie1 {
+       status = "disabled";
+};
+
+&snd_934x {
+        qcom,audio-routing =
+                "AIF4 VI", "MCLK",
+                "RX_BIAS", "MCLK",
+                "MADINPUT", "MCLK",
+                "hifi amp", "LINEOUT1",
+                "hifi amp", "LINEOUT2",
+                "AMIC2", "MIC BIAS2",
+                "MIC BIAS2", "Headset Mic",
+                "AMIC3", "MIC BIAS2",
+                "MIC BIAS2", "ANCRight Headset Mic",
+                "AMIC4", "MIC BIAS2",
+                "MIC BIAS2", "ANCLeft Headset Mic",
+                "AMIC5", "MIC BIAS3",
+                "MIC BIAS3", "Handset Mic",
+                "DMIC0", "MIC BIAS1",
+                "MIC BIAS1", "Digital Mic",
+                "DMIC1", "MIC BIAS1",
+                "MIC BIAS1", "Digital Mic",
+                "DMIC2", "MIC BIAS3",
+                "MIC BIAS3", "Digital Mic",
+                "DMIC3", "MIC BIAS3",
+                "MIC BIAS3", "Digital Mic",
+                "DMIC4", "MIC BIAS4",
+                "MIC BIAS4", "Digital Mic",
+                "DMIC5", "MIC BIAS4",
+                "MIC BIAS4", "Digital Mic",
+                "SpkrLeft IN", "SPK1 OUT",
+                "SpkrRight IN", "SPK2 OUT";
+};
+
+&soc {
+	/delete-node/ msm_cdc_pinctrl@49;
+
+	sound-tavil {
+		/delete-property/ qcom,usbc-analog-en1-gpio;
+		/delete-property/ qcom,usbc-analog-en2-gpio;
+		/delete-property/ pinctrl-names;
+		/delete-property/ pinctrl-0;
+		/delete-property/ pinctrl-1;
+
+		/* We do not use Qualcomm WSA speaker amp */
+		qcom,wsa-max-devs = <0>;
+
+		/* htc typec headset detection */
+		htc,aud_gpio_ids = "htc,aud_typec_id1",
+				"htc,aud_typec_id2",
+				"htc,aud_usb_position";
+
+		htc,aud_gpio_switches = "htc,miclr_flip_en",
+				"htc,miclr_dgnd_sw_en";
+
+		htc,aud_3v3_en = <&pm8005_gpios 1 0>;
+		htc,aud_usb_position = <&tlmm 128 0>;
+		htc,aud_typec_id1 = <&pm8998_gpios 12 0>;
+		htc,aud_typec_id2 = <&pm8998_gpios 13 0>;
+		htc,miclr_flip_en = <&tlmm 7 0>;
+		htc,miclr_dgnd_sw_en = <&tlmm 104 0>;
+		htc,hsmic_2v85_en = <&pm8998_gpios 15 0>;
+
+/*
+		htc,aud_remote_sensor = <&pm8998_gpios 9 0>;
+		htc,adapter_35mm_threshold = <330 800>;
+		htc,adapter_25mm_threshold = <1250 2850>;
+
+		htc,headset_adc_channel = <19>;
+		qcom,headset-vadc = <&pm8998_vadc>;
+		htc,mbhc_hsdet_l = <&tlmm 79 0>;
+*/
+		htc,usb_hph_switch = "fsa4476";
+		htc,usb_hph_switch_gpio0 = <&pm8998_gpios 10 0>; /* FSA4476 ENN */
+		htc,usb_hph_switch_gpio1 = <&pm8998_gpios 6 0>; /* FSA4476 EN1 */
+		htc,usb_hph_switch_gpio2 = <&pm8998_gpios 7 0>; /* FSA4476 EN2 */
+
+		htc,mbhc-swap-detect = <0>; /* Disable MBHC SWAP detection */
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&miclr_flip_en_default
+				&fsa4476_enn_ap_default
+				&fsa4476_en1_ap_default
+				&fsa4476_en2_ap_default
+				&aud_usb_position_default
+				&aud_typec_id1_default
+				&aud_typec_id2_default
+				&aud_hsmic_2v85_en_default
+				&aud_3v3_en_default
+				&miclr_dgnd_sw_en_default>;
+	};
+
+	/* TI config for spk chip */
+	i2c@a88000 { /* i2c QUP10 */
+		tas2557s@4c {
+			compatible = "ti,tas2557s";
+			reg = <0x4c>;
+			ti,cdc-reset-gpio = <&tlmm 28 0>;
+			ti,irq-gpio-left = <&pm8998_gpios 17 0>;
+			ti,irq-gpio-right = <&pm8998_gpios 1 0>;
+			ti,left-channel = <0x4c>;
+			ti,right-channel = <0x4d>;
+			ti,echo-ref = <1>;   /* 0, left channel; 1, right channel; 2, both */
+			ti,i2s-bits = <16>;   /* support 16, 24, 32 */
+			ti,load = <0>;   /* 0, 8Ohm; 1, 6Ohm; 2, 4Ohm */
+			ti,bypass-tmax = <1>;
+			status = "ok";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&aud_tas2557_irq2_default
+					&aud_spk_amp_rst_default
+					&aud_tas2557_irq1_default>;
+		};
+	};
+};
+
+&dai_mi2s3 {
+	compatible = "qcom,msm-dai-q6-mi2s";
+	qcom,msm-dai-q6-mi2s-dev-id = <3>;
+	qcom,msm-mi2s-rx-lines = <2>;
+	qcom,msm-mi2s-tx-lines = <1>;
+	qcom,msm-mi2s-slave = <0>;
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&quat_mi2s_active
+			&quat_mi2s_sd0_active
+			&quat_mi2s_sd1_active>;
+	pinctrl-1 = <&quat_mi2s_sleep
+			&quat_mi2s_sd0_sleep
+			&quat_mi2s_sd1_sleep>;
+};
+
+&soc {
+	htc-misc-extcon {
+		compatible = "htc-misc-extcon";
+		status = "ok";
+	};
+};

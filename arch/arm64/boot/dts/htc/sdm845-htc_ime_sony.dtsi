@@ -1,0 +1,18 @@
+&soc {
+	i2c@88c000 { /* i2c QUP3 */
+	sony_cxd224x_nfc@28 {
+		/*Common*/
+		compatible = "sony,nfccxd224x";
+		reg = <0x28>;
+		interrupts = <63 0x2>;
+		interrupt-parent = <&tlmm>;
+                clock-names = "ref_clk";
+                qcom,clk-src = "BBCLK3";
+                clocks = <&clock_rpmh RPMH_LN_BB_CLK3>;
+		sony,irq_gpio = <&tlmm 63 0x00>;
+		sony,rst_gpio = <&tlmm 9 0x00>;
+		sony,wake_gpio = <&tlmm 8 0x00>;
+		qcom,nq-clkreq = <&pm8998_gpios 21 0>;
+		};
+	};
+};

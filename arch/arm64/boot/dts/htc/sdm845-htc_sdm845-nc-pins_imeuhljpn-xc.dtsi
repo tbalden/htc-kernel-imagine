@@ -1,0 +1,45 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&soc {
+	htc,htc_nc_pins {
+		compatible = "htc,nc_pin";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&nc_pins_pm8998
+			&nc_pins_pmi8998>;
+	};
+};
+
+&pm8998_gpios {
+	nc_pins_pm8998 {
+		nc_pins_pm8998: nc_pins_pm8998 {
+			pins = "gpio14", "gpio18";
+			function = "normal";
+			output-disable;
+			input-enable;
+			bias-pull-down;
+		};
+	};
+};
+
+&pmi8998_gpios {
+	nc_pins_pmi8998 {
+		nc_pins_pmi8998: nc_pins_pmi8998 {
+			pins = "gpio1", "gpio8", "gpio10";
+			function = "normal";
+			output-disable;
+			input-enable;
+			bias-pull-down;
+		};
+	};
+};

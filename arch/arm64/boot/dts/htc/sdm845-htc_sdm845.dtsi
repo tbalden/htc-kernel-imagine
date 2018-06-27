@@ -1,0 +1,65 @@
+#include "sdm845-htc-common.dtsi"
+#include "sdm845-htc_sdm845_nfc.dtsi"
+#include "sdm845-htc_sdm845_usb.dtsi"
+
+
+&qupv3_se2_i2c {
+	status = "okay";
+};
+
+&qupv3_se3_i2c {
+	status = "okay";
+};
+
+&qupv3_se10_i2c {
+	status = "okay";
+};
+
+&qupv3_se14_i2c {
+	status = "okay";
+};
+
+
+&qupv3_se2_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se2_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se3_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se3_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se10_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se10_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se14_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se14_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};

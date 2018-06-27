@@ -1,0 +1,128 @@
+#include "sdm845-htc-common.dtsi"
+#include "sdm845-audio-ime.dtsi"
+#include "sdm845-htc_ime-usb.dtsi"
+#include "sdm845-key-ime.dtsi"
+#include "sdm845-touch-ime.dtsi"
+#include "sdm845-htc-nanohub.dtsi"
+#include "sdm845-camera-laser-ime.dtsi"
+#include "sdm845-htc_ime-fingerprint.dtsi"
+#include "sdm845-hallsensor-ime.dtsi"
+#include "sdm845-vibrator-ime.dtsi"
+#include "sdm845-edge-ime.dtsi"
+#include "sdm845-edge-ime-spi.dtsi"
+
+&qupv3_se3_i2c {
+	status = "okay";
+};
+
+&qupv3_se10_i2c {
+	status = "okay";
+};
+
+&qupv3_se11_i2c {
+	status = "okay";
+};
+
+&qupv3_se14_i2c {
+	status = "okay";
+};
+
+
+&qupv3_se3_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se3_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se10_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se10_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se11_i2c_active {
+	mux {
+		function = "qup11";
+	};
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se11_i2c_sleep {
+	mux {
+		function = "qup11";
+	};
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se14_i2c_active {
+	mux {
+		function = "qup14";
+	};
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se14_i2c_sleep {
+	mux {
+		pins = "gpio33", "gpio34";
+		function = "gpio";
+	};
+	config {
+		pins = "gpio33", "gpio34";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+};
+
+&qupv3_se5_spi_active {
+	mux {
+		function = "qup5";
+	};
+
+	config {
+		drive-strength = <2>;
+	};
+};
+
+&qupv3_se5_spi_sleep {
+	mux {
+		function = "qup5";
+	};
+
+	config {
+		drive-strength = <2>;
+	};
+};
+
+&qupv3_se12_spi_active {
+	mux {
+		function = "qup12";
+	};
+	config {
+		bias-pull-down;
+		drive-strength = <2>;
+	};
+};
+
+&qupv3_se12_spi_sleep {
+	mux {
+		function = "qup12";
+	};
+	config {
+		bias-pull-down;
+		drive-strength = <2>;
+	};
+};

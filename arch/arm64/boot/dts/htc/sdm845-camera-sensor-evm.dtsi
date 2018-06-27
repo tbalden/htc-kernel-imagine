@@ -1,0 +1,284 @@
+/*
+ * Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&soc {
+	pinctrl@03400000 {
+		cci0_active {
+			mux {
+				/* CLK, DATA */
+				pins = "gpio17","gpio18"; // Only 2
+				function = "cci_i2c";
+			};
+
+			config {
+				pins = "gpio17","gpio18";
+				bias-pull-up; /* PULL UP*/
+				drive-strength = <8>; /* 2 MA */
+			};
+		};
+
+		cci0_suspend {
+			mux {
+				/* CLK, DATA */
+				pins = "gpio17","gpio18";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio17","gpio18";
+				bias-pull-down; /* PULL DOWN */
+				drive-strength = <8>; /* 2 MA */
+				output-low; /*HTC ADD*/
+			};
+		};
+
+		cci1_active {
+			mux {
+				/* CLK, DATA */
+				pins = "gpio19","gpio20";
+				function = "cci_i2c";
+			};
+
+			config {
+				pins = "gpio19","gpio20";
+				bias-pull-up; /* PULL UP*/
+				drive-strength = <8>; /* 2 MA */
+			};
+		};
+
+		cci1_suspend {
+			mux {
+				/* CLK, DATA */
+				pins = "gpio19","gpio20";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio19","gpio20";
+				bias-pull-down; /* PULL DOWN */
+				drive-strength = <8>; /* 2 MA */
+				output-low; /*HTC ADD*/
+			};
+		};
+
+		cam_sensor_rear_active {
+			/* RESET, STANDBY */
+			mux {
+				pins = "gpio80";	/*HTC modify */
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio80";	/*HTC modify */
+				bias-disable; /* No PULL */
+				drive-strength = <2>; /* 2 MA */
+				output-high;		/*HTC ADD*/
+			};
+		};
+
+		cam_sensor_rear_suspend{
+			/* RESET, STANDBY */
+			mux {
+				pins = "gpio80";	/*HTC modify */
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio80";	/*HTC modify */
+				bias-disable; /* No PULL */
+				drive-strength = <2>; /* 2 MA */
+				output-low;			/*HTC ADD*/
+			};
+		};
+
+		cam_sensor_front_active {
+			/* RESET, STANDBY */
+			mux {
+				pins = "gpio9";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio9";
+				bias-disable; /* No PULL */
+				drive-strength = <2>; /* 2 MA */
+				output-high;		/*HTC ADD*/
+			};
+		};
+
+		cam_sensor_front_suspend {
+			/* RESET, STANDBY */
+			mux {
+				pins = "gpio9";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio9";
+				bias-disable; /* No PULL */
+				drive-strength = <2>; /* 2 MA */
+				output-low;			/*HTC ADD*/
+			};
+		};
+
+		cam_sensor_mclk0_active {
+			/* MCLK0 */
+			mux {
+				/* CLK, DATA */
+				pins = "gpio13";
+				function = "cam_mclk";
+			};
+
+			config {
+				pins = "gpio13";
+				bias-disable; /* No PULL */
+				drive-strength = <8>; /* 2 MA */
+			};
+		};
+
+		cam_sensor_mclk0_suspend {
+			/* MCLK0 */
+			mux {
+				/* CLK, DATA */
+				pins = "gpio13";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio13";
+				bias-pull-down; /* PULL DOWN */
+				drive-strength = <8>; /* 2 MA */
+				output-low; /*HTC ADD*/
+			};
+		};
+
+		cam_sensor_mclk1_active {
+			/* MCLK2 */
+			mux {
+				/* CLK, DATA */
+				pins = "gpio15";
+				function = "cam_mclk";
+			};
+
+			config {
+				pins = "gpio15";
+				bias-disable; /* No PULL */
+				drive-strength = <8>; /* 2 MA */
+			};
+		};
+
+		cam_sensor_mclk1_suspend {
+			/* MCLK2 */
+			mux {
+				/* CLK, DATA */
+				pins = "gpio15";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio15";
+				bias-pull-down; /* PULL DOWN */
+				drive-strength = <8>; /* 2 MA */
+				output-low; /*HTC ADD*/
+			};
+		};
+	};
+};
+
+&cam_cci {
+	qcom,cam-sensor@0 {
+		cell-index = <0>;
+		compatible = "qcom,cam-sensor";
+		reg = <0x0>;
+		csiphy-sd-index = <0>;
+		sensor-position-roll = <90>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <180>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk0_active
+				 &cam_sensor_rear_active>;
+		pinctrl-1 = <&cam_sensor_mclk0_suspend
+				 &cam_sensor_rear_suspend>;
+		gpios = <&tlmm 13 0>,
+			<&tlmm 80 0>,
+			<&tca6418_qup10 0 0>,
+			<&tca6418_qup10 2 0>,
+			<&tca6418_qup10 4 0>,
+			<&tca6418_qup10 1 0>,
+			<&tca6418_qup10 3 0>,
+			<&tca6418_qup10 8 0>;
+		gpio-reset = <1>;
+		gpio-vdig = <2>;
+		gpio-vana = <3>;
+		gpio-vaf = <4>;
+		gpio-custom1 = <5>;
+		gpio-custom2 = <6>;
+		gpio-vio = <7>;
+		gpio-req-tbl-num = <0 1 2 3 4 5 6 7>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK0",
+					"CAM0_RESET0",
+					"CAM0_VDIG",
+					"CAM0_VANA",
+					"CAM0_VAF",
+					"CAM0_A1V8",
+					"CAM0_DRV",
+					"CAM0_VIO";
+		sensor-mode = <0>;
+		cci-master = <0>;
+		status = "ok";
+		clocks = <&clock_camcc CAM_CC_MCLK0_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <24000000>;
+	};
+
+	qcom,cam-sensor@2 {
+		cell-index = <2>;
+		compatible = "qcom,cam-sensor";
+		reg = <0x02>;
+		csiphy-sd-index = <2>;
+		sensor-position-roll = <270>;
+		sensor-position-pitch = <0>;
+		sensor-position-yaw = <0>;
+		gpio-no-mux = <0>;
+		pinctrl-names = "cam_default", "cam_suspend";
+		pinctrl-0 = <&cam_sensor_mclk1_active
+				 &cam_sensor_front_active>;
+		pinctrl-1 = <&cam_sensor_mclk1_suspend
+				 &cam_sensor_front_suspend>;
+		gpios = <&tlmm 15 0>,
+			<&tlmm 9 0>,
+			<&tca6418_qup10 5 0>,
+			<&tca6418_qup10 7 0>,
+			<&tca6418_qup10 8 0>;
+		gpio-reset = <1>;
+		gpio-vdig = <2>;
+		gpio-vana = <3>;
+		gpio-vio = <4>;
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK2",
+					"CAM_RESET2",
+					"CAM2_VDIG",
+					"CAM2_VANA",
+					"CAM2_VIO";
+		sensor-mode = <0>;
+		cci-master = <1>;
+		status = "ok";
+		clocks = <&clock_camcc CAM_CC_MCLK2_CLK>;
+		clock-names = "cam_clk";
+		clock-cntl-level = "turbo";
+		clock-rates = <24000000>;
+	};
+};

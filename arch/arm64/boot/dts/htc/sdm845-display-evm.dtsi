@@ -1,0 +1,177 @@
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+#include "dsi-panel-sdm845-s6e3ha3.dtsi"
+#include <dt-bindings/clock/mdss-10nm-pll-clk.h>
+#include <dt-bindings/regulator/qcom,rpmh-regulator.h>
+
+&pm8998_l14 {
+	regulator-name = "pm8998_l14";
+	qcom,set = <RPMH_REGULATOR_SET_ALL>;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
+	qcom,init-mode = <RPMH_REGULATOR_MODE_LDO_LPM>;
+};
+
+&pm8998_l22 {
+	regulator-name = "pm8998_l22";
+	qcom,set = <RPMH_REGULATOR_SET_ALL>;
+	regulator-min-microvolt = <3000000>;
+	regulator-max-microvolt = <3000000>;
+	qcom,init-voltage = <3000000>;
+	qcom,init-mode = <RPMH_REGULATOR_MODE_LDO_LPM>;
+};
+
+&soc {
+	dsi_panel_pwr_supply_s6e3ha3: dsi_panel_pwr_supply_s6e3ha3 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		qcom,panel-supply-entry@0 {
+			reg = <0>;
+			qcom,supply-name = "vddio";
+			qcom,supply-min-voltage = <1800000>;
+			qcom,supply-max-voltage = <1800000>;
+			qcom,supply-enable-load = <62000>;
+			qcom,supply-disable-load = <80>;
+			qcom,supply-pre-on-sleep = <0>;
+			qcom,supply-post-on-sleep = <10>;
+			qcom,supply-pre-off-sleep = <10>;
+			qcom,supply-post-off-sleep = <1>;
+		};
+		qcom,panel-supply-entry@1 {
+			reg = <1>;
+			qcom,supply-name = "vci";
+			qcom,supply-min-voltage = <3000000>;
+			qcom,supply-max-voltage = <3000000>;
+			qcom,supply-enable-load = <100000>;
+			qcom,supply-disable-load = <100>;
+			qcom,supply-pre-on-sleep = <0>;
+			qcom,supply-post-on-sleep = <10>;
+		};
+	};
+
+	dsi_dual_s6e3ha3_sdm845_cmd_display: htc,dsi-display {
+		compatible = "htc,dsi-display";
+		label = "dsi_dual_s6e3ha3_sdm845_cmd_display";
+		qcom,display-type = "primary";
+
+		qcom,dsi-ctrl = <&mdss_dsi0 &mdss_dsi1>;
+		qcom,dsi-phy = <&mdss_dsi_phy0 &mdss_dsi_phy1>;
+		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
+			<&mdss_dsi0_pll PCLK_MUX_0_CLK>;
+		clock-names = "src_byte_clk", "src_pixel_clk";
+
+		pinctrl-names = "panel_active", "panel_suspend";
+		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
+		pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+		qcom,platform-te-gpio = <&tlmm 12 0>;
+		qcom,platform-reset-gpio = <&tlmm 6 0>;
+
+		qcom,dsi-panel = <&dsi_dual_s6e3ha3_sdm845_cmd>;
+		vddio-supply = <&pm8998_l14>;
+		vci-supply = <&pm8998_l22>;
+		lab-supply = <>;
+		ibb-supply = <>;
+	};
+};
+
+&mdss_mdp {
+	connectors = <&sde_rscc &sde_wb &dsi_dual_s6e3ha3_sdm845_cmd_display>;
+};
+
+&dsi_dual_s6e3ha3_sdm845_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_s6e3ha3>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <255>;
+	qcom,mdss-dsi-mode-sel-gpio-state = "dual_port";
+	qcom,platform-te-gpio = <&tlmm 12 0>;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+
+	qcom,mdss-dsi-t-clk-post = <0x0E>;
+	qcom,mdss-dsi-t-clk-pre = <0x36>;
+	qcom,mdss-dsi-display-timings {
+		timing@0{
+			qcom,mdss-dsi-panel-phy-timings = [00 16 05 05 08 0C 06
+				05 04 03 04 00];
+			qcom,display-topology = <2 0 2>,
+						<1 0 2>;
+			qcom,default-topology-index = <0>;
+		};
+	};
+
+};
+
+&dsi_dual_sim_vid_display {
+	/delete-property/ qcom,dsi-display-active;
+};
+
+&dsi_dual_s6e3ha3_sdm845_cmd_display {
+	qcom,dsi-display-active;
+};
+
+&sde_dsi_active {
+	mux {
+		pins = "gpio6";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio6";
+		drive-strength = <2>;   /* 2 mA */
+		bias-disable = <0>;   /* no pull */
+	};
+};
+
+&sde_dsi_suspend {
+	mux {
+		pins = "gpio6";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio6";
+		drive-strength = <2>;   /* 2 mA */
+		bias-pull-down;         /* PULL DOWN */
+	};
+};
+
+
+
+&sde_te_active {
+	mux {
+		pins = "gpio12";
+		function = "mdp_vsync";
+	};
+
+	config {
+		pins = "gpio12";
+		drive-strength = <2>;   /* 2 mA */
+		bias-pull-down;         /* PULL DOWN */
+	};
+};
+
+&sde_te_suspend {
+	mux {
+		pins = "gpio12";
+		function = "mdp_vsync";
+	};
+
+	config {
+		pins = "gpio12";
+		drive-strength = <2>;   /* 2 mA */
+		bias-pull-down;         /* PULL DOWN */
+	};
+};
+
+

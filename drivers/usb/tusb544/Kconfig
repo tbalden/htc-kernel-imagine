@@ -1,0 +1,9 @@
+#
+# USB device configuration
+#
+
+config TUSB544
+	bool "TUSB544 usb3 re-drive"
+	default n
+	help
+	  Say Y here to enable the TUSB544 usb3.0 re-drive

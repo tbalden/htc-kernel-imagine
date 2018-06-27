@@ -1,0 +1,26 @@
+#
+# Sentons Edgesensor driver
+#
+
+config EDGE_SENTONS
+       default n
+       tristate "Sentons Edgesensor support"
+       depends on SPI_MASTER || I2C
+       select HTC_FEATURE
+       help
+         Say Y here to enable Sentons snt8100fsr edge sensor driver.
+
+config HTC_FEATURE
+       default n
+       tristate "Enable HTC features"
+       depends on EDGE_SENTONS
+       select NANOHUB_SILEGO
+       help
+         Say Y here to enable HTC features for snt8100fsr driver.
+
+config NANOHUB_SILEGO
+       default n
+       tristate "Enable HTC features with nanohub and silego"
+       depends on HTC_FEATURE
+       help
+         Say Y here to enable HTC features with nanohub and silego.

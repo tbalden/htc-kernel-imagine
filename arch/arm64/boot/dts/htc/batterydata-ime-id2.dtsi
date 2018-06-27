@@ -1,0 +1,78 @@
+qcom,ime-id2-batterydata {
+	qcom, = <24>;
+	/* #3174103_HTC_IMEbyd_3420mAh_averaged_MasterSlave_Nov29th2017*/
+	qcom,max-voltage-uv = <4400000>;
+	qcom,nom-batt-capacity-mah = <3420>;
+	qcom,batt-id-kohm = <33>;
+	qcom,battery-beta = <4360>;
+	qcom,battery-type = "ime_id2";
+	qcom,checksum = <0xA8FA>;
+	qcom,gui-version = "PMI8998GUI - 2.0.0.58";
+
+	qcom,fastchg-current-ma = <3400>;
+	qcom,fg-cc-cv-threshold-mv = <4390>;
+	qqcom,fcc-mah = <3420>;
+
+	htc,batt_id = <2>;
+	htc,id_raw_min = <22001>;
+	htc,id_raw_max = <47000>;
+
+	qcom,fg-profile-data = [
+		 A1 1E C0 06
+		 13 03 2E F5
+		 D3 1C 2F 02
+		 31 0D 53 0B
+		 CC 17 96 23
+		 D4 44 DA 53
+		 65 00 00 00
+		 11 00 00 00
+		 00 00 B9 C5
+		 02 C5 4B CA
+		 1A 00 08 00
+		 69 E3 2B ED
+		 DE 06 35 F3
+		 93 EA 91 13
+		 62 F5 47 3A
+		 22 06 09 20
+		 27 00 14 00
+		 A2 1F CE 05
+		 38 0A A2 06
+		 C2 1C 0F 03
+		 E8 15 44 12
+		 84 18 F7 23
+		 C0 4D 8A 5B
+		 69 00 00 00
+		 0D 00 00 00
+		 00 00 4F D5
+		 AA C3 A0 CA
+		 16 00 00 00
+		 F7 EB 2B ED
+		 4B 07 7D F2
+		 B2 E3 7D 0A
+		 0F F5 38 22
+		 B6 33 CC FF
+		 07 10 00 00
+		 EB 0D 66 46
+		 16 00 40 00
+		 A1 01 0A FA
+		 FF 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+		 00 00 00 00
+	];
+};

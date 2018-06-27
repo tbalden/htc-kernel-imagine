@@ -1,0 +1,123 @@
+&tlmm {
+	pmx_ts {
+		ts_intr_active: ts_intr_active {
+			mux {
+				pins = "gpio125";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio125";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+		ts_intr_suspend: ts_intr_suspend {
+			mux {
+				pins = "gpio125";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio125";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+
+		ts_rst_active: ts_rst_active {
+			mux {
+				pins = "gpio96";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio96";
+				drive-strength = <2>;
+				bias-disable; /* No PULL */
+				output-high;
+			};
+		};
+		ts_rst_suspend: ts_rst_suspend {
+			mux {
+				pins = "gpio96";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio96";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		ts_3v3_active: ts_3v3_active {
+			mux {
+				pins = "gpio16";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio16";
+				drive-strength = <2>;
+				bias-disable; /* No PULL */
+				output-high;
+			};
+		};
+		ts_3v3_suspend: ts_3v3_suspend {
+			mux {
+				pins = "gpio16";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio16";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+	};
+};
+
+&qupv3_se14_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&qupv3_se14_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se14_i2c {
+	status = "okay";
+
+	synaptics_dsx@20 {
+		compatible = "synaptics,dsx_v26-i2c";
+		reg = <0x20>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <125 0x2008>;
+		synaptics,irq-gpio = <&tlmm 125 0x2008>;  /* IRQF_ONESHOT | IRQF_TRIGGER_LOW */
+		synaptics,irq-on-state = <0>;
+		synaptics,reset-gpio = <&tlmm 96 0x00>;
+		synaptics,reset-on-state = <0>;
+		synaptics,reset-active-ms = <1>;
+		synaptics,reset-delay-ms = <20>;
+		synaptics,power-gpio = <&pmi8998_gpios 5 0>;
+		synaptics,power-on-state = <1>;
+		synaptics,switch-gpio = <&tlmm 92 0x00>;
+		synaptics,switch-hub-state = <1>;
+		synaptics,display-coords = <1440 2560>;
+		synaptics,update-feature = <0>;
+		synaptics,tw-pin-mask = <0x3>;
+//		synaptics,tp-src-id = <0x0 0x1 0x2 0x3>;
+//		synaptics,tp-src-img = "synaptics_0.img", "synaptics_1.img",
+//					"synaptics_2.img", "synaptics_3.img";
+		pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+		pinctrl-0 = <&ts_rst_active &ts_intr_active &ts_3v3_active>;
+		pinctrl-1 = <&ts_rst_suspend &ts_intr_suspend &ts_3v3_active>;
+	};
+};

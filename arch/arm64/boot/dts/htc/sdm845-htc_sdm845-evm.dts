@@ -1,0 +1,41 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+
+/dts-v1/;
+
+/ {
+        aliases {
+                i2c2 = &qupv3_se2_i2c;
+                i2c3 = &qupv3_se3_i2c;
+                i2c10 = &qupv3_se10_i2c;
+                i2c14 = &qupv3_se14_i2c;
+        };
+};
+
+#include "../qcom/sdm845.dtsi"
+#include "../qcom/sdm845-mtp.dtsi"
+#include "sdm845-htc_sdm845.dtsi"
+#include "tca6418-evm.dtsi"
+#include "sdm845-audio-evm.dtsi"
+#include "sdm845-display-evm.dtsi"
+#include "sdm845-touch-evm.dtsi"
+#include "sdm845-htc_led.dtsi"
+#include "sdm845-key-evm.dtsi"
+#include "sdm845-camera-sensor-evm.dtsi"
+
+/ {
+	model = "HTC Corporation. Inc. MSM sdm845 v1 EVM";
+	compatible = "qcom,sdm845-mtp", "qcom,sdm845", "qcom,mtp";
+	qcom,board-id = <0x1D 0>;
+};
+

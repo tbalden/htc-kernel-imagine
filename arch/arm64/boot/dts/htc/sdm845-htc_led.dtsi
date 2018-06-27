@@ -1,0 +1,23 @@
+&spmi_bus {
+	qcom,pmi8998@3 {
+		qcom,leds@d000 {
+			qcom,rgb_indicator{
+				label = "rgb";
+				pwm_ratio = /bits/ 8 <80>;
+				linux,name = "indicator";
+                        };
+			qcom,rgb_0 {
+				linux,name = "rgb_red";
+				linux,default-trigger = "none";
+			};
+			qcom,rgb_1 {
+				linux,name = "rgb_green";
+				linux,default-trigger = "none";
+			};
+			qcom,rgb_2 {
+				linux,name = "rgb_blue";
+				linux,default-trigger = "none";
+			};
+		};
+	};
+};

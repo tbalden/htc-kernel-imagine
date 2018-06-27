@@ -1,0 +1,62 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+&tlmm {
+	snt_cs{
+		snt_cs_low: snt_cs_low {
+			mux {
+				pins = "gpio88";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio88";
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+		};
+
+		snt_cs_high: snt_cs_high {
+			mux {
+				pins = "gpio88";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio88";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+	};
+};
+&qupv3_se5_i2c {
+	status = "disabled";
+};
+&soc {
+	qupv3_se5_spi: spi@894000 {
+		status = "okay";
+		qcom,infinite-mode = <0>;
+	};
+};
+
+&qupv3_se5_spi {
+	use-fifo;
+
+	edge-sentons-spi@0 {
+		compatible = "sentons,snt8100fsr-spi";
+		reg = <0>;
+		spi-max-frequency = <4800000>;
+		snt,spi-freq-khz = <1920>;/*480,960,1920*/
+	};
+};

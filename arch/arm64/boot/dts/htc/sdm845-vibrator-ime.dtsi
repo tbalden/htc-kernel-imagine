@@ -1,0 +1,42 @@
+&tlmm {
+	haptics_pinctrl_default: haptics_pinctrl_default {
+		config {
+			pins = "gpio43";
+			function = "gpio";
+			input-enable;
+			drive-strength = <2>;
+			bias-disable;
+		};
+	};
+};
+
+&soc {
+	i2c@a8c000 {
+		status = "okay";
+		dw7912_vibrator: dw7912@59 {
+			compatible = "dwanatech,dw7912";
+			reg = <0x59>;
+			/* gpx0_0, set to output mode(0x1), en pin is active high*/
+			dw7912,en-gpio = <&tlmm 127 0x1>;
+			dw7912,freq = <153>;
+			dw7912,side-keys-VL = <0x40>;
+			dw7912,noti-VL = <0x3c>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&haptics_pinctrl_default>;
+			memory-mode-header-1 = [];
+			memory-mode-wave-1 = [];
+		};
+	};
+};
+
+&qupv3_se11_i2c_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&qupv3_se11_i2c_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};

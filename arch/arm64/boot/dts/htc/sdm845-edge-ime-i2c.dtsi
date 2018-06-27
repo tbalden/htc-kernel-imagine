@@ -1,0 +1,96 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&tlmm {
+	snt_reset{
+		snt_reset_active: reset {
+			mux {
+				pins = "gpio49";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio49";
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+		};
+
+		snt_reset_normal: active {
+			mux {
+				pins = "gpio49";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio49";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+	};
+
+	snt_hostirq_default {
+		snt_hostirq_default: active {
+			mux {
+				pins = "gpio50";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio50";
+				drive-strength = <2>;
+				/*bias-pull-down;*/
+				bias-disable;
+			};
+		};
+	};
+};
+
+&i2c_9_active {
+	config {
+		drive-strength = <8>;
+	};
+};
+&i2c_9_sleep {
+	config {
+		drive-strength = <8>;
+	};
+};
+
+&i2c_9 {    /* i2c@c1b7000 */
+	status = "okay";
+	qcom,disable-dma;
+	edge-sentons-i2c@2c {
+		compatible	= "sentons,snt8100fsr-i2c";
+		reg		= <0x2c>;
+		interrupt-parent= <&tlmm>;
+		interrupts	= <50 0x0>;
+		snt,gpio_rst	= <&tlmm 49 0>;
+		snt,gpio_hostirq= <&tlmm 50 0>;
+
+		pinctrl-names = "snt_hostirq_default",
+				"snt_reset_active",
+				"snt_reset_normal";
+
+		pinctrl-0 = <&snt_hostirq_default>;
+		pinctrl-1 = <&snt_reset_active>;
+		pinctrl-2 = <&snt_reset_normal>;
+	};
+	edge-sentons-i2c@4c {
+		compatible	= "sentons,snt8100fsr-i2c";
+		reg		= <0x4c>;
+		wake-device	= <1>;
+	};
+};

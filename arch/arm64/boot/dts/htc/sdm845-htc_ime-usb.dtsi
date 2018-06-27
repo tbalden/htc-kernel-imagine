@@ -1,0 +1,200 @@
+/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/*
+ * sdm845-htc_ime-usb: usb related config
+ */
+
+&tlmm {
+	usbpd_cc_dir: usbpd_cc_dir {
+		mux {
+			pins = "gpio38";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio38";
+			drive-strength = <2>;
+			bias-disable;
+			input-enable;
+		};
+	};
+
+	audio_detect_active: audio_detect_active {
+		mux {
+			pins = "gpio79";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio79";
+			bias-disable;
+			output-low;
+			drive-strength = <2>;
+		};
+	};
+
+	audio_detect_sleep: audio_detect_sleep {
+		mux {
+			pins = "gpio79";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio79";
+			bias-disable;
+			output-high;
+			drive-strength = <2>;
+		};
+	};
+
+	redriver_id: redriver_id {
+		mux {
+			pins = "gpio117";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio117";
+			input-enable;
+			bias-pull-up;
+			drive-strength = <2>;
+		};
+	};
+
+        atest_usb13_active: atest_usb13_active {
+                mux {
+                        pins = "gpio76";
+                        function = "gpio";
+                };
+
+                config {
+                        pins = "gpio76";
+                        output-high;
+                        drive-strength = <2>;
+                };
+        };
+
+        atest_usb13_suspend: atest_usb13_suspend {
+                mux {
+                        pins = "gpio76";
+                        function = "gpio";
+                };
+
+                config {
+                        pins = "gpio76";
+                        output-low;
+                        drive-strength = <2>;
+                };
+        };
+};
+
+&pm8998_gpios {
+	tusb544_v_1v8_en { /* 1044_SLP_S0#_AP */
+		tusb544_v_1v8_en_default:tusb544_v_1v8_en_default {
+			pins = "gpio4";
+			function = "normal";
+			output-low;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+
+	tusb544_v_vdd_en { /* REDV_3V3_EN */
+		tusb544_v_vdd_en_default:tusb544_v_vdd_en_default {
+			pins = "gpio5";
+			function = "normal";
+			output-low;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+};
+
+&pmi8998_gpios {
+	tps61099_en { /* OTG_5V enable pin */
+		tps61099_enable:tps61099_enable {
+			pins = "gpio14";
+			function = "normal";
+			output-low;
+			bias-disable;
+			power-source = <0>;
+		};
+	};
+};
+
+&pmi8998_charger {
+	ext_power-supply = <&htc_tps61099>;
+	qcom,otg-cl-ua = <1000000>;
+	smb2_vbus: qcom,smb2-vbus {
+		regulator-name = "smb2-vbus";
+	};
+};
+
+&pmi8998_pdphy {
+	vbus-supply = <&smb2_vbus>;/*override pmi8998.dtsi in evm stage*/
+	pinctrl-names = "pin_active" , "pin_sleep", "usbpd_cc_dir";
+	pinctrl-0 = <&audio_detect_active>;
+	pinctrl-1 = <&audio_detect_sleep>;
+	pinctrl-2 = <&usbpd_cc_dir>;
+};
+
+&qupv3_se3_i2c {
+	status = "ok";
+	tusb544-i2c@44 {
+		compatible = "ti,tusb544-i2c";
+		reg = <0x44>;
+		tusb544,redriver_id = <&tlmm 117 0x00>;
+		tusb544,v_3v3_en = <&pm8005_gpios 2 0>;/* LED_3V3_EN */
+		tusb544,v_1v8_en = <&pm8998_gpios 4 0>;/* 1044_SLP_S0#_AP */
+		tusb544,v_vdd_en = <&pm8998_gpios 5 0>;/* REDV_3V3_EN */
+	};
+};
+
+&qusb_phy0 {
+	skip_efuse_reg;
+	qcom,qusb-phy-init-seq =
+		/* <value reg_offset> */
+		   <0x23 0x210 /* PWR_CTRL1 */
+		    0x03 0x04  /* PLL_ANALOG_CONTROLS_TWO */
+		    0x7c 0x18c /* PLL_CLOCK_INVERTERS */
+		    0x80 0x2c  /* PLL_CMODE */
+		    0x0a 0x184 /* PLL_LOCK_DELAY */
+		    0x19 0xb4  /* PLL_DIGITAL_TIMERS_TWO */
+		    0x40 0x194 /* PLL_BIAS_CONTROL_1 */
+		    0x20 0x198 /* PLL_BIAS_CONTROL_2 */
+		    0x21 0x214 /* PWR_CTRL2 */
+		    0x00 0x220 /* IMP_CTRL1 */
+		    0x58 0x224 /* IMP_CTRL2 */
+		    0x73 0x240 /* TUNE1 */ /* HTC fune tune it */
+		    0x29 0x244 /* TUNE2 */
+		    0xca 0x248 /* TUNE3 */
+		    0x04 0x24c /* TUNE4 */
+		    0x03 0x250 /* TUNE5 */
+		    0x00 0x23c /* CHG_CTRL2 */
+		    0x22 0x210>; /* PWR_CTRL1 */
+
+        pinctrl-names = "atest_usb13_suspend", "atest_usb13_active";
+        pinctrl-0 = <&atest_usb13_suspend>;
+        pinctrl-1 = <&atest_usb13_active>;
+};
+
+&qusb_phy1 {
+	status = "disabled";
+};
+
+&soc {
+	htc_tps61099: htc_tps61099 {
+		compatible = "htc,tps61099";
+		tps,pmi_gpio_en = <&pmi8998_gpios 14 0>;
+	};
+};

@@ -1,0 +1,176 @@
+/*
+ * sdm845-htc-common: common configs of sdm845 HTC projects
+ */
+#include "sdm845-display-common.dtsi"
+#include "sdm845-htc_sdm845-batt.dtsi"
+#include "sdm845-htc-ime_led.dtsi"
+
+&soc {
+	/* Modem_BSP */
+	htc_radio_smem {
+		compatible = "htc,htc_radio_smem";
+	};
+
+	qcom,rmtfs_rtel_sharedmem@0 {
+		compatible = "htc,rtel-uio";
+		reg = <0x9F800000 0x02000000>;
+		memory-region = <&htc_rtel_mem>;
+		reg-names = "rtel";
+		qcom,client-id = <0x00000001>;
+	};
+
+	qcom,msm-rtb {
+		reg = <0x85200000 0x100000>;
+		reg-names = "msm_rtb_res";
+	};
+
+	wdog: qcom,wdt@17980000{
+		reg = <0x17980000 0x1000>,
+		      <0x0c221000 0x1000>;
+		reg-names = "wdt-base",
+			    "mpm-clock-base";
+		qcom,bark-time = <18000>;
+		qcom,pet-time = <8000>;
+	};
+
+	htc_mnemosyne@0 {
+		compatible = "htc,mnemosyne";
+		reg = <0x85310000 0x2000>;
+		reg-names = "htc_mnemosyne_res";
+        };
+
+	htc_ramoops@0 {
+		compatible = "htc,ramoops";
+		linux,contiguous-region = <&ramoops_mem>;
+		record-size = <0x00010000>;  /*  128 KB */
+		console-size = <0x00100000>; /* 1024 KB */
+		pmsg-size = <0x00080000>;    /*  512 KB */
+		ftrace-size = <0x00040000>;  /*  256 KB */
+		dump-oops = <0x1>;
+	};
+
+	mcd {
+		compatible = "qcom,mcd";
+		qcom,ce-hw-instance = <0>;
+		qcom,ce-device = <0>;
+		interrupts = <0 640 0>;
+		interrupt-names = "mcd_irq";
+		clock-names = "core_clk_src", "core_clk",
+			"iface_clk", "bus_clk";
+		clocks = <&clock_gcc GCC_CE1_CLK>,
+			<&clock_gcc GCC_CE1_CLK>,
+			<&clock_gcc GCC_CE1_AHB_CLK>,
+			<&clock_gcc GCC_CE1_AXI_CLK>;
+		qcom,ce-opp-freq = <171430000>;
+	};
+};
+
+&reserved_memory {
+	htc_reserve1_mem: htc_reserve1_region@0 {
+		compatible = "removed-dma-pool";
+		no-map;
+		reg = <0 0x85200000 0 0x00300000>;
+	};
+
+	htc_rtel_mem: htc_rtel_region@0 {
+		compatible = "shared-dma-pool";
+		reusable;
+		reg = <0 0x9F800000 0 0x2000000>; /* 32 MB */
+	};
+
+	ramoops_mem: ramoops_region@0 {
+		compatible = "removed-dma-pool";
+		no-map;
+		reg = <0 0x85500000 0 0x00200000>;
+	};
+};
+
+&spmi_bus {
+        qcom,pm8998@0 {
+                qcom,power-on@800 {
+                        qcom,pon_1 {
+                                qcom,support-reset = <1>;
+                                qcom,s1-timer = <6720>;
+                                qcom,s2-timer = <2000>;
+                                qcom,s2-type = <8>;
+                                qcom,use-bark;
+                        };
+                        qcom,pon_2 {
+                                qcom,support-reset = <0>;
+                        };
+                        qcom,pon_3 {
+                                qcom,support-reset = <0>;
+                        };
+                };
+        };
+};
+
+&pm8998_vadc {
+        chan@4e {
+                label = "emmc_therm";
+                reg = <0x4e>;
+                qcom,decimation = <2>;
+                qcom,pre-div-channel-scaling = <0>;
+                qcom,calibration-type = "ratiometric";
+                qcom,scale-function = <2>;
+                qcom,hw-settle-time = <2>;
+                qcom,fast-avg-setup = <0>;
+        };
+};
+
+&pm8998_adc_tm {
+        chan@4e {
+                label = "emmc_therm";
+                reg = <0x4e>;
+                qcom,pre-div-channel-scaling = <0>;
+                qcom,calibration-type = "ratiometric";
+                qcom,scale-function = <2>;
+                qcom,hw-settle-time = <2>;
+                qcom,btm-channel-number = <0x88>;
+                qcom,thermal-node;
+        };
+};
+
+&thermal_zones {
+	xo-therm-adc {
+		trips {
+			active-config0 {
+			temperature = <125000>;
+			hysteresis = <10000>;
+			};
+		};
+	};
+
+        msm-therm-adc {
+                trips {
+                        active-config0 {
+                        temperature = <125000>;
+                        hysteresis = <10000>;
+                        };
+                };
+        };
+
+        pa-therm1-adc {
+                trips {
+                        active-config0 {
+                        temperature = <125000>;
+                        hysteresis = <10000>;
+                        };
+                };
+        };
+
+        emmc-therm-adc {
+                polling-delay-passive = <0>;
+                polling-delay = <0>;
+                thermal-sensors = <&pm8998_adc_tm 0x4e>;
+                thermal-governor = "user_space";
+
+                trips {
+                        active-config0 {
+                                temperature = <125000>;
+                                hysteresis = <10000>;
+                                type = "passive";
+                        };
+                };
+        };
+};

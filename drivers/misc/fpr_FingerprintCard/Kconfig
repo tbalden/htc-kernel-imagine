@@ -1,0 +1,30 @@
+#
+# FingerprintCard fingerprint driver
+#
+menu "FingerprintCard fingerprint driver"
+config FPR_FPC
+       tristate "FPC_BTP fingerprint sensor support"
+       depends on SPI_MASTER
+       default n
+
+config FPC_HTC_DISABLE_CHARGING
+       tristate "HTC FPC disable charging while capturing image during enroll/verify"
+       depends on FPR_FPC
+       default n
+
+config FPC_HTC_ENABLE_DBG
+       tristate "HTC FPC enable dbg log"
+       depends on FPR_FPC
+       default y
+
+config FPC_HTC_ENABLE_POWER
+       tristate "HTC FPC enable power for fp sensor"
+       depends on FPR_FPC
+       default y
+
+config FPC_HTC_ENABLE_WAKE_LOCK
+       tristate "HTC FPC enable wake lock for fp sensor"
+       depends on FPR_FPC
+       default n
+
+endmenu

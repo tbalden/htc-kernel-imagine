@@ -1,0 +1,41 @@
+#
+# Fingerprint driver configuration 
+#
+menu "Goodix fingerprint SPI driver"
+config GOODIX_FP
+       default n
+       tristate "Goodix BTP fingerprint sensor support"
+       depends on SPI_MASTER
+
+config HTC_DISABLE_CHARGING
+       default n
+       tristate "HTC FP disable charging while capturing image during enroll/verify"
+       depends on GOODIX_FP
+
+config HTC_PCN_HAL_FOOTPRINT_CMD
+       default n
+       tristate "HTC sync time at kernel from HAL layer!"
+       depends on GOODIX_FP
+
+config HTC_PCN_FP_ENABLE_3V3_POWER
+       default n
+       tristate "HTC enable 3v3 power!"
+       depends on GOODIX_FP
+
+config HTC_PCN_FP_ENABLE_HW_RESET_PINCTRL
+       default n
+       tristate "HTC enable HW Reset with pinctrl!"
+       depends on GOODIX_FP
+
+config HTC_PCN_FP_ENABLE_WAKE_LOCK
+       default n
+       tristate "HTC enable wake lock!"
+       depends on GOODIX_FP
+
+config HTC_PCN_IRQ_ENABLE_LOG
+       default n
+       tristate "HTC enable irq log"
+       depends on GOODIX_FP
+
+endmenu
+

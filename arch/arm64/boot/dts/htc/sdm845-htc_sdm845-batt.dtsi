@@ -1,0 +1,158 @@
+/*
+ * sdm845-htc_sdm845-batt: battery configs of sdm845 HTC projects
+ */
+
+&vendor {
+	htc_battery_store {
+		compatible = "htc,htc_battery_store";
+		htc,stored-batt-magic-num = <(-1)>;
+		htc,stored-batt-soc = <(-1)>;
+		htc,stored-batt-update-time = <(-1)>;
+		htc,stored-batt-temperature = <(-1)>;
+		htc,stored-batt-total-level = <0>;
+		htc,stored-batt-overheat-sec = <0>;
+		htc,stored-batt-first-use = <0>;
+		htc,stored-batt-checksum = <0>;
+	};
+};
+
+&pm8998_vadc {
+	chan@12 {
+		label = "htcchg_usb_in_isen";
+		reg = <0x12>;
+		qcom,decimation = <0>;
+		qcom,pre-div-channel-scaling = <0>;
+		qcom,calibration-type = "ratiometric";
+		qcom,scale-function = <0>;
+		qcom,hw-settle-time = <1>;
+		qcom,fast-avg-setup = <2>;
+		qcom,cal-val = <0>;
+	};
+
+	chan@15 {
+		label = "usb_conn_temp";
+		reg = <0x15>;
+		qcom,decimation = <0>;
+		qcom,pre-div-channel-scaling = <0>;
+		qcom,calibration-type = "ratiometric";
+		qcom,scale-function = <0>;
+		qcom,hw-settle-time = <1>;
+		qcom,fast-avg-setup = <2>;
+		qcom,cal-val = <0>;
+	};
+};
+
+&pm8998_gpios {
+	/delete-node/ key_cam_focus;
+	htcchg_en { /* HTC_CHG_EN */
+		htcchg_en_default: htcchg_en_default {
+			pins = "gpio2";
+			function = "normal";
+			bias-disable;
+			output-low;
+			power-source = <0>;
+		};
+	};
+
+	htcchg_usb_in_isen {
+		htcchg_usb_in_isen_default: htcchg_usb_in_isen_default{
+			pins = "gpio8";
+			function = "normal";
+			input-enable;
+			bias-pull-down; /* PULL DOWN */
+		};
+	};
+
+	usb_conn_temp {
+		usb_conn_temp_default: usb_conn_temp_default{
+			pins = "gpio11";
+			function = "normal";
+			input-enable;
+			bias-disable; /* NO PULL */
+		};
+	};
+};
+
+&pmi8998_charger {
+	qcom,battery-data = <&sdm845_batterydata>;
+	htc,htc-chg-enable  = <&pm8998_gpios 2 0>;
+	qcom,htcchg_usb_in_isen-vadc = <&pm8998_vadc>;
+	qcom,usb_conn_temp-vadc = <&pm8998_vadc>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&htcchg_usb_in_isen_default>;
+	pinctrl-1 = <&usb_conn_temp_default>;
+	qcom,usb_in_isen-channel = <0x12>;
+	qcom,usb_conn_temp-channel = <0x15>;
+	iusb_rsen = <68>;
+	iusb_multiplier = <100>;
+	htc,htc-chg-ready = <&tlmm 93 0>;
+	htc,qc3-vol-limit = <10>;
+	htc,qc3-curr-limit-ma = <2200>;
+	qcom,usb-icl-ua = <3000000>;
+	qcom,otg-cl-ua = <1000000>;
+	bob-supply = <&pmi8998_bob>;
+};
+
+&pmi8998_fg {
+	/delete-property/ qcom,hold-soc-while-full;
+	qcom,fg-force-load-profile = <1>;
+	qcom,fg-rsense-sel = <0>;
+	qcom,fg-chg-term-current = <50>;
+	qcom,fg-cutoff-voltage = <3320>;
+	qcom,fg-sys-term-current = <(-410)>;
+	qcom,fg-jeita-thresholds = <0 10 48 55>;
+	qcom,fg-jeita-hyst-temp = <2>;
+	qcom,fg-recharge-voltage = <4300>;
+	qcom,fg-cutoff-current = <100>;
+};
+
+&vendor {
+	sdm845_batterydata: qcom,battery-data {
+		#include "batterydata-ime-id1.dtsi"
+		#include "batterydata-ime-id2.dtsi"
+		#include "batterydata-ime-unknown.dtsi"
+	};
+};
+
+&vendor {
+	htc_battery_dt {
+		compatible = "htc,htc_battery_dt";
+		htc,fastchg-current-ma = <3400>;
+		htc,allow-power-off-voltage = <3320>;
+		htc,batt-full-current-ma = <410>;
+		htc,health-level = <6>;
+		htc,batt-health-good = <2>;
+		htc,chg-vbatt-thresholds = <4100 4100 4250 4250 4100 4100>;	/* htc,health-level * 1 */
+		htc,chg-vbatt-recover-thresholds = <3900 3900 4100 4100 4000 4000>;
+		htc,chg-temp-thresholds =	<(-10000)   20>,	/* htc,health-level * 2 */
+						<       0  120>,
+						<     420  100>,	/* GOOD */
+						<     480  400>,
+						<     550  460>,
+						<   10000  530>;
+		htc,chg-fcc-limits = <					/* 4 * htc,health-level */
+			1700 1700 3400 1500 1500 1500
+			1000 1000 1000 1000 1000 1000
+			 650  650 1700 1500 1000 1000
+			 650  650 1000 1000 1000 1000
+		>;
+		htc,qc2-chg-fcc-limits = <				/* 4 * htc,health-level */
+			1700 1700 3400 1500 1500 1500
+			1000 1000 1000 1000 1000 1000
+			 650  650 1700 1500 1000 1000
+			 650  650 1000 1000 1000 1000
+		>;
+		htc,qc3-chg-fcc-limits = <				/* 4 * htc,health-level */
+			1700 1700 3400 1500 1500 1500
+			1000 1000 1000 1000 1000 1000
+			 650  650 1700 1500 1000 1000
+			 650  650 1000 1000 1000 1000
+		>;
+		htc,typec-chg-fcc-limits = <				/* 4 * htc,health-level */
+			1700 1700 3400 1500 1500 1500
+			1700 1700 3400 1500 1500 1500
+			 650  650 1700 1500 1000 1000
+			 650  650 1700 1500 1000 1000
+		>;
+	};
+};

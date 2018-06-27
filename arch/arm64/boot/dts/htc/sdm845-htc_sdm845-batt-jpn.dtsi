@@ -1,0 +1,8 @@
+/*
+ * sdm845-htc_sdm845-batt: battery configs of sdm845 HTC projects
+ */
+
+
+&pmi8998_charger {
+	/delete-property/ qcom,usb_in_isen-channel;
+};

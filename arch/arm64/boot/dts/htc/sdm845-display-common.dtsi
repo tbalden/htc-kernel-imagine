@@ -1,0 +1,55 @@
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/*Null Panel Setting*/
+
+&dsi_dual_sim_vid_display {
+	compatible = "htc,dsi-display";
+	qcom,dsi-display-active;
+	qcom,platform-reset-gpio = <&tlmm 6 0>;
+	/delete-property/ qcom,panel-supply-entries;
+
+};
+
+&dsi_dual_sim_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&sde_dsi_active {
+	mux {
+		pins = "gpio6";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio6";
+		drive-strength = <2>;   /* 2 mA */
+		bias-disable = <0>;   /* no pull */
+	};
+};
+
+&sde_dsi_suspend {
+	mux {
+		pins = "gpio6";
+		function = "gpio";
+	};
+
+	config {
+		pins = "gpio6";
+		drive-strength = <2>;   /* 2 mA */
+		bias-pull-down;         /* PULL DOWN */
+	};
+};
+
+&pmi8998_wled {
+	status = "disabled";
+};

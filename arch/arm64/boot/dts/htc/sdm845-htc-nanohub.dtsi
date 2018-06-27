@@ -1,0 +1,178 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/*
+ * htc-nanohub : nanohub config
+ */
+
+&qupv3_se12_i2c {
+	status = "disabled";
+};
+
+&tlmm {
+/*
+	qupv3_se12_spi_pins {
+		qupv3_se12_spi_active: qupv3_se12_spi_active {
+			config {
+				bias-pull-down;
+			};
+		};
+
+		qupv3_se12_spi_sleep: qupv3_se12_spi_sleep {
+			config {
+				bias-pull-down;
+			};
+		};
+	};
+*/
+	sensorhub_ctrl {
+	/* NRST, BOOT0, AP2SH, SH2AP, SH2APNW*/
+		sensorhub_ctrl_active: sensorhub_ctrl_active {
+			mux {
+				pins = "gpio69", "gpio101", "gpio90", "gpio122", "gpio129";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio69", "gpio101", "gpio90", "gpio122", "gpio129";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+	};
+
+	sensorhub_handshaking {
+	/* HANDSHAKING */
+		sensorhub_handshaking_active: sensorhub_handshaking_active {
+			mux {
+				pins = "gpio26";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio26";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+	//sensorhub_intrs {
+	///* Interrupts */
+	//	sensorhub_intrs_active: sensorhub_intrs_active {
+	//		mux {
+	//			pins = "gpio122", "gpio129";
+	//			function = "gpio";
+	//		};
+
+	//		config {
+	//			pins = "gpio122", "gpio129";
+	//			drive-strength = <2>;
+	//			bias-pull-up;
+	//		};
+	//	};
+	//};
+};
+
+/ {
+	aliases {
+		spi12 = &qupv3_se12_spi;
+	};
+};
+
+&soc {
+	qupv3_se12_spi: spi@a90000 { /* BLSP1 QUP3 */
+		status = "okay";
+		spi-max-frequency = <19200000>;
+		qcom,infinite-mode = <0>;
+		qcom,rt-priority;
+	};
+};
+
+&qupv3_se12_spi {
+	nanohub: sensorhub@0 {
+		compatible = "nanohub";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <122 0x2>;
+		sensorhub,nreset-gpio = <&tlmm 69 0x00>;
+		sensorhub,boot0-gpio = <&tlmm 101 0x00>;
+		sensorhub,wakeup-gpio = <&tlmm 90 0x00>;
+		sensorhub,irq1-gpio = <&tlmm 122 0x00>;
+		sensorhub,irq2-gpio = <&tlmm 129 0x00>;
+		sensorhub,handshaking-gpio = <&tlmm 26 0x00>;
+		sensorhub,spi-cs-gpio = <&tlmm 52 0x00>;
+		sensorhub,bl-addr = <0x08000000>;
+		sensorhub,kernel-addr = <0x0800C000>;
+		sensorhub,shared-addr = <0x08040000>;
+		sensorhub,flash-banks = <0 0x08000000 0x04000>,
+			<3 0x0800C000 0x04000>,
+			<4 0x08010000 0x10000>,
+			<5 0x08020000 0x20000>;
+		sensorhub,num-flash-banks = <4>;
+		sensorhub,shared-flash-banks = <6 0x08040000 0x20000>,
+			<7 0x08060000 0x20000>;
+		sensorhub,num-shared-flash-banks = <2>;
+		sensorhub,flash-page-size = <2048>;
+		sensorhub,gesture-vibrate-ms = <25>;
+
+		sensorhub,gpio1 = <&tlmm 23 0x00>;
+		sensorhub,gpio2 = <&tlmm 25 0x00>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&sensorhub_ctrl_active &sensorhub_handshaking_active &clk_out_default>;
+	};
+};
+
+&pm8998_l28 {  // V_SR_1V8
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
+	qcom,init-enable = <1>;
+	qcom,init-ldo-mode = <1>;
+	regulator-always-on;
+};
+
+&pm8998_l19 {  // V_SR_2V85
+	regulator-min-microvolt = <2850000>;
+	regulator-max-microvolt = <2850000>;
+	qcom,init-voltage = <2850000>;
+	qcom,init-enable = <1>;
+	qcom,init-ldo-mode = <1>;
+	regulator-always-on;
+};
+
+/*
+&pm660_lXX {  // OCL uses V_IO_1V8, no need to control
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	qcom,init-voltage = <1800000>;
+	regulator-always-on;
+	status = "okay";
+};
+*/
+
+/* Enable PM845 GPIO 16 clk 32K function */
+
+&pm8998_gpios {
+	clk_out {
+		clk_out_default: clk_out_default {
+			pins = "gpio16";    /* GPIO 16 */
+			function = "func1"; /* Special Function 1 */
+			bias-disable;       /* No Pull */
+			power-source = <0>; /* VIN0 */
+			output-low;         /* digital output, no invert */
+		};
+	};
+};

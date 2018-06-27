@@ -1,0 +1,97 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&tlmm {
+	snt_reset {
+		snt_reset_active: snt_reset_active {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio21";
+				drive-strength = <2>;
+				input-disable;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		snt_reset_normal: snt_reset_normal {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio21";
+				drive-strength = <2>;
+				input-enable;
+				bias-disable;
+			};
+		};
+	};
+
+	snt_hostirq_default {
+		snt_hostirq_default: snt_hostirq_default {
+			mux {
+				pins = "gpio119";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio119";
+				drive-strength = <2>;
+				input-enable;
+				bias-disable;
+			};
+		};
+	};
+
+	snt_wakeirq_default {
+		snt_wakeirq_default: snt_wakeirq_default {
+			mux {
+				pins = "gpio123";
+				function = "gpio";
+			};
+
+			config{
+				pins = "gpio123";
+				drive-strength = <2>;
+				input-enable;
+				bias-disable;
+			};
+		};
+	};
+};
+
+&soc {
+	edge-sentons {
+		status		= "okay";
+		compatible	= "sentons,snt8100fsr";
+		interrupt-parent= <&tlmm>;
+		interrupts	= <119 0x0>;
+		snt,gpio_rst	= <&tlmm 21 0>;
+		snt,gpio_hostirq= <&tlmm 119 0>;
+		snt,gpio_wakeirq= <&tlmm 123 0>;
+		pinctrl-names = "snt_hostirq_default",
+				"snt_wakeirq_default",
+				"snt_reset_active",
+				"snt_reset_normal";
+
+		pinctrl-0 = <&snt_hostirq_default>;
+		pinctrl-1 = <&snt_wakeirq_default>;
+		pinctrl-2 = <&snt_reset_active>;
+		pinctrl-3 = <&snt_reset_normal>;
+	};
+};

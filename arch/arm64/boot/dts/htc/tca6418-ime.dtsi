@@ -1,0 +1,18 @@
+&qupv3_se3_i2c {
+        status = "ok";
+        tca6418_i2c_qup3: tca6418-i2c-qup3@34 {
+                compatible = "ti,tca6418-i2c";
+                reg = <0x34>;
+                pinctrl = <&tca6418_qup3>;
+        };
+};
+
+&soc {
+	tca6418_qup3: tca6418-pinctrl-qup3 {
+		compatible = "ti,tca6418-pinctrl";
+		#gpio-cells = <2>;
+		io_exp_rst = <&tlmm 75 0>;
+		label = "tca6418-gpio-qup3";
+		i2c-client = <&tca6418_i2c_qup3>;
+	};
+};

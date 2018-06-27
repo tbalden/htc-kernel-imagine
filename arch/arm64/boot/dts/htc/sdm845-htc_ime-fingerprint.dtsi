@@ -1,0 +1,159 @@
+/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+/*
+ * sdm845-htc_ime-fingerprint: fingerprint config
+ */
+
+&tlmm {
+    fpc1020_reset{
+        fpc1020_reset_reset: reset {
+            mux {
+                pins = "gpio78";
+                function = "gpio";
+            };
+
+            config{
+                pins = "gpio78";
+                drive-strength = <2>;
+                bias-disable;
+                output-low;
+             };
+        };
+        fpc1020_reset_active: active {
+            mux {
+                pins = "gpio78";
+                function = "gpio";
+            };
+
+            config{
+                pins = "gpio78";
+                drive-strength = <2>;
+                bias-disable;
+                output-high;
+            };
+        };
+    };
+
+     fpc1020_irq_active {
+        fpc1020_irq_active: active {
+            mux {
+                pins = "gpio121";
+                function = "gpio";
+            };
+
+            config{
+                pins = "gpio121";
+                drive-strength = <2>;
+                bias-disable;
+            };
+        };
+    };
+
+    goodix_reset{
+        goodix_reset_low: reset {
+            mux {
+                pins = "gpio78";
+                function = "gpio";
+            };
+
+            config{
+                pins = "gpio78";
+                drive-strength = <2>;
+                bias-disable;
+                output-low;
+             };
+        };
+        goodix_reset_high: active {
+            mux {
+                pins = "gpio78";
+                function = "gpio";
+            };
+
+            config{
+                pins = "gpio78";
+                drive-strength = <2>;
+                bias-disable;
+                output-high;
+            };
+        };
+    };
+
+
+};
+
+&pmi8998_gpios {
+    fpc1020_fp1v8_enable {
+        fpc1020_fp1v8_enable: enable {
+            pins = "gpio2";
+            function = "normal";
+            bias-disable;
+            output-high;
+            power-source = <0>;
+        };
+    };
+
+    fpc1020_fp3v3_enable {
+        fpc1020_fp3v3_enable: enable {
+            pins = "gpio5";
+            function = "normal";
+            bias-disable;
+            output-high;
+            power-source = <0>;
+        };
+    };
+
+
+
+};
+
+&soc {
+    fp_fpc1020 {
+            compatible = "fpc,fpc1020";
+            interrupt-parent  = <&tlmm>;
+            interrupts        = <121 0x0>;
+            fpc,gpio_rst = <&tlmm 78 0>;
+            fpc,gpio_irq = <&tlmm 121 0>;
+            fpc,pmi_gpio_en = <&pmi8998_gpios 2 0>;
+            pinctrl-names     =
+                        "fpc1020_irq_active",
+                        "fpc1020_reset_reset",
+                        "fpc1020_reset_active",
+                        "fpc1020_fp1v8_enable";
+
+            pinctrl-0         = <&fpc1020_irq_active>;
+            pinctrl-1         = <&fpc1020_reset_reset>;
+            pinctrl-2         = <&fpc1020_reset_active>;
+            pinctrl-3         = <&fpc1020_fp1v8_enable>;
+            status = "okay";
+    };
+
+
+    goodix_fp {
+            compatible = "goodix,fingerprint";
+            interrupt-parent  = <&tlmm>;
+            interrupts        = <121 0x0>;
+            fp-gpio-reset = <&tlmm 78 0>;
+            fp-gpio-irq = <&tlmm 121 0>;
+            fp,3v3_gpio_en = <&pmi8998_gpios 5 0>;
+            pinctrl-names     = "fpc1020_irq_active",
+                                "goodix_reset_low",
+                                "goodix_reset_high";
+
+            pinctrl-0         = <&fpc1020_irq_active>;
+            pinctrl-1         = <&goodix_reset_low>;
+            pinctrl-2         = <&goodix_reset_high>;
+            status = "okay";
+    };
+
+};
+
