@@ -1,0 +1,8 @@
+https://git.ti.com/tas2557sw-android
+git clone git://git.ti.com/tas2557sw-android/tas2557-stereo-driver.git
+
+commit 731119422128f9ae672ffe69924932f2867d2c45
+Author: Peter Li <a0220410@ti.com>
+Date:   Tue Jul 11 05:56:52 2017 +0800
+
+    driver v4.0, support multiple sources for same sample rate
