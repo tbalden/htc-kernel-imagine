@@ -82,3 +82,5 @@ obj-$(CONFIG_FPR_FPC)  += fpr_FingerprintCard/
 obj-$(CONFIG_GOODIX_FP)  += goodix_fp/
 #=== Fingerprint ===#
 obj-$(CONFIG_VIB_TRIGGERS)	+= vib-triggers.o
+
+obj-$(CONFIG_UCI)  += uci/
