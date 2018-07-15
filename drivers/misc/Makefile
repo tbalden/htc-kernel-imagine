@@ -84,3 +84,5 @@ obj-$(CONFIG_GOODIX_FP)  += goodix_fp/
 obj-$(CONFIG_VIB_TRIGGERS)	+= vib-triggers.o
 
 obj-$(CONFIG_UCI)  += uci/
+obj-$(CONFIG_UCI_NOTIFICATIONS)  += notification/
+obj-y  += fpf/
