@@ -1258,6 +1258,23 @@ static void __init dw7912_waveform_async(void *unused, async_cookie_t cookie)
 
 }
 
+#ifdef CONFIG_UCI
+// TODO
+void set_vibrate(int val) { }
+EXPORT_SYMBOL(set_vibrate);
+void set_vibrate_boosted(int val) { }
+EXPORT_SYMBOL(set_vibrate_boosted);
+void set_notification_booster(int value) { }
+EXPORT_SYMBOL(set_notification_booster);
+int get_notification_booster(void) { return 0; }
+EXPORT_SYMBOL(get_notification_booster);
+void set_notification_boost_only_in_pocket(int value) { }
+EXPORT_SYMBOL(set_notification_boost_only_in_pocket);
+int get_notification_boost_only_in_pocket(void) { return 0; }
+EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
+
+
+#endif
 static int dw7912_i2c_probe(struct i2c_client *client,
 				      const struct i2c_device_id *id)
 {
