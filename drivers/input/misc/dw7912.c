@@ -1272,7 +1272,8 @@ void set_notification_boost_only_in_pocket(int value) { }
 EXPORT_SYMBOL(set_notification_boost_only_in_pocket);
 int get_notification_boost_only_in_pocket(void) { return 0; }
 EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
-
+void set_suspend_booster(int value) { }
+EXPORT_SYMBOL(set_suspend_booster);
 
 #endif
 static int dw7912_i2c_probe(struct i2c_client *client,
