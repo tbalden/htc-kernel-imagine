@@ -255,51 +255,51 @@ static void nav_event_input(struct gf_dev *gf_dev, gf_nav_event_t nav_event)
 
 	switch (nav_event) {
 	case GF_NAV_FINGER_DOWN:
-		pr_debug("%s nav finger down\n", __func__);
+		pr_info("%s nav finger down\n", __func__);
 		break;
 
 	case GF_NAV_FINGER_UP:
-		pr_debug("%s nav finger up\n", __func__);
+		pr_info("%s nav finger up\n", __func__);
 		break;
 
 	case GF_NAV_DOWN:
 		nav_input = GF_NAV_INPUT_DOWN;
-		pr_debug("%s nav down\n", __func__);
+		pr_info("%s nav down\n", __func__);
 		break;
 
 	case GF_NAV_UP:
 		nav_input = GF_NAV_INPUT_UP;
-		pr_debug("%s nav up\n", __func__);
+		pr_info("%s nav up\n", __func__);
 		break;
 
 	case GF_NAV_LEFT:
 		nav_input = GF_NAV_INPUT_LEFT;
-		pr_debug("%s nav left\n", __func__);
+		pr_info("%s nav left\n", __func__);
 		break;
 
 	case GF_NAV_RIGHT:
 		nav_input = GF_NAV_INPUT_RIGHT;
-		pr_debug("%s nav right\n", __func__);
+		pr_info("%s nav right\n", __func__);
 		break;
 
 	case GF_NAV_CLICK:
 		nav_input = GF_NAV_INPUT_CLICK;
-		pr_debug("%s nav click\n", __func__);
+		pr_info("%s nav click\n", __func__);
 		break;
 
 	case GF_NAV_HEAVY:
 		nav_input = GF_NAV_INPUT_HEAVY;
-		pr_debug("%s nav heavy\n", __func__);
+		pr_info("%s nav heavy\n", __func__);
 		break;
 
 	case GF_NAV_LONG_PRESS:
 		nav_input = GF_NAV_INPUT_LONG_PRESS;
-		pr_debug("%s nav long press\n", __func__);
+		pr_info("%s nav long press\n", __func__);
 		break;
 
 	case GF_NAV_DOUBLE_CLICK:
 		nav_input = GF_NAV_INPUT_DOUBLE_CLICK;
-		pr_debug("%s nav double click\n", __func__);
+		pr_info("%s nav double click\n", __func__);
 		break;
 
 	default:
@@ -373,18 +373,31 @@ static void gf_kernel_key_input(struct gf_dev *gf_dev, struct gf_key *gf_key)
 	pr_info("%s: received key event[%d], key=%d, value=%d\n",
 			__func__, key_input, gf_key->key, gf_key->value);
 
+#if 0
 	if ((GF_KEY_POWER == gf_key->key || GF_KEY_CAMERA == gf_key->key)
+#endif
+#if 1
+	if ((GF_KEY_POWER == gf_key->key)
+#endif
 			&& (gf_key->value == 1)) {
 		input_report_key(gf_dev->input, key_input, 1);
 		input_sync(gf_dev->input);
 		input_report_key(gf_dev->input, key_input, 0);
 		input_sync(gf_dev->input);
 	}
-
+#if 0
 	if (GF_KEY_HOME == gf_key->key) {
 		input_report_key(gf_dev->input, key_input, gf_key->value);
 		input_sync(gf_dev->input);
 	}
+#endif
+#if 1
+	if (GF_KEY_CAMERA == gf_key->key) {
+		pr_info("%s fpf - camera mapped to Home...\n",__func__);
+		input_report_key(gf_dev->input, GF_KEY_INPUT_HOME, gf_key->value);
+		input_sync(gf_dev->input);
+	}
+#endif
 }
 
 static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
