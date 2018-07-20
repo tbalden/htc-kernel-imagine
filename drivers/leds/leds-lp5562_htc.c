@@ -29,6 +29,30 @@
 #include <linux/module.h>
 /*include <mach/ADP5585_ioextender.h>*/
 #include <linux/of_gpio.h>
+#include <linux/spinlock.h>
+
+#if 1
+#include <linux/stacktrace.h>
+#endif
+
+#define CONFIG_LEDS_QPNP_BUTTON_BLINK
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+#include <linux/alarmtimer.h>
+#include <linux/notification/notification.h>
+#include <linux/uci/uci.h>
+#endif
+
+#ifdef CONFIG_HZ_300
+#define JIFFY_MUL 3
+#else
+#define JIFFY_MUL 1
+#endif
+
+#ifdef CONFIG_FB
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
+
 
 #define LP5562_MAX_LEDS			9	/* Maximum number of LEDs */
 #define LED_DEBUG				1
@@ -43,12 +67,178 @@
 #define MAIN_TOUCH_SOLUTION 2
 #define SEC_TOUCH_SOLUTION 1
 
+
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+
+bool vk_present = false;
+
+// bln_on_screenoff : this is used to follow register_haptic based notif events... when
+// ...AmbientDisplay wakes device (BLN is not possible), but after screen off, BLN is triggered based on this
+// ... in the fb notifier BLANK event part. register_haptic sets it 1, register_input sets it 0 because that will be a user wake...
+// ... also wake_by_user in UNBLANK notification will set it 0:
+static int bln_on_screenoff = 0;
+
+#define BUTTON_BLINK_SPEED_MAX		2
+#define BUTTON_BLINK_SPEED_DEFAULT	1
+
+#define BUTTON_BLINK_NUMBER_MAX		50
+#define BUTTON_BLINK_NUMBER_DEFAULT	6
+
+#define RGB_PATTERN_NORMAL 0
+#define RGB_PATTERN_ONEPLUS5 1
+#define RGB_PATTERN_TRIPLE 2
+#define RGB_PATTERN_TRIPLE_UP 3
+#define RGB_PATTERN_TRIPLE_DOWN 4
+
+
+static DEFINE_MUTEX(blinkstopworklock);
+static struct alarm blinkstopfunc_rtc;
+static int probe_finished = 0;
+
+static int bln_switch = 1; // 0 - off / 1 - on
+static int bln_no_charger_switch = 1; // 0 - only do BLN when on charger / 1 - BLN when not on charger
+static int bln_ignore_vibration = 0; // 0 - detect vib pattern for notifications / 1 - do not start notification on vibration
+static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0 - number of max button blinks when not on charger
+static int bln_speed = BUTTON_BLINK_SPEED_DEFAULT;
+static int bln_dim_blink = 0; // continue quarter strength blinking after bln_number passed blinking
+static int bln_dim_number = 0;//BUTTON_BLINK_NUMBER_DEFAULT * 2; // infinite = 0 - number of max dim button blinks when not on charger
+
+static int full_or_dim = 1;
+
+static int lights_down_divider = 1;
+static int rgb_coeff_divider = 1; // value between 1 - 20
+static int bln_coeff_divider = 6; // value between 1 - 21 ... on sysfs 0-20
+
+static int pulse_rgb_blink = 1;  // 0 - normal stock blinking / 1 - pulsating
+static int pulse_rgb_pattern =  RGB_PATTERN_NORMAL;
+static int pulse_rgb_blink_on_charger = 0; // 0 - not blink on charger, 1 - do blink
+static int pulse_rgb_blink_on_charger_red_limit = 95; // 0-100 percentage where color from red switches to green
+
+static int colored_charge_level = 1; // if set to 1, colored charge level handling is enabled, 0 - not
+static int colored_charge_level_discrete = 0; // if set to 0 charge level coloring changes continuously, otherwwise 4 levels...set by user
+
+static int colored_charge_level_0 = 35;
+static int colored_charge_level_1 = 75;
+static int colored_charge_level_2 = 95;
+
+static int get_bln_switch(void) {
+	if (!vk_present) return 0;
+	return uci_get_user_property_int_mm("bln", bln_switch, 0, 1);
+}
+static int get_bln_ignore_vibration(void) {
+	return uci_get_user_property_int_mm("bln_ignore_vibration", bln_ignore_vibration, 0, 1);
+}
+static int get_bln_no_charger_switch(void) {
+	return uci_get_user_property_int_mm("bln_no_charger_switch", bln_no_charger_switch, 0, 1);
+}
+static int get_bln_number(void) {
+	return uci_get_user_property_int_mm("bln_number", bln_number, 0, 50);
+}
+static int get_bln_light_level(void) {
+	return uci_get_user_property_int_mm("bln_light_level", bln_coeff_divider-1, 0, 20)+1;
+}
+static int get_bln_speed(void) {
+	return uci_get_user_property_int_mm("bln_speed", bln_speed, 0, 2);
+}
+static int get_bln_dim_blink(void) {
+	return uci_get_user_property_int_mm("bln_dim_blink", bln_dim_blink, 0, 1);
+}
+static int get_bln_dim_number(void) {
+	return uci_get_user_property_int_mm("bln_dim_number", bln_dim_number, 0, 50);
+}
+static int get_bln_rgb_blink_light_level(void) {
+	return uci_get_user_property_int_mm("bln_rgb_light_level", rgb_coeff_divider-1, 0, 20)+1;
+}
+static int get_bln_pulse_rgb_blink(void) {
+	return uci_get_user_property_int_mm("bln_rgb_pulse", pulse_rgb_blink, 0, 1);
+}
+static int get_bln_pulse_rgb_pattern(void) {
+	return uci_get_user_property_int_mm("bln_rgb_pulse_pattern", pulse_rgb_pattern, 0, 4);
+}
+static int get_bln_rgb_batt_colored(void) {
+	return uci_get_user_property_int_mm("bln_rgb_batt_colored", colored_charge_level, 0, 1);
+}
+static int get_bln_rgb_batt_colored_discrete(void) {
+	return uci_get_user_property_int_mm("bln_rgb_batt_colored_discrete", colored_charge_level_discrete, 0, 1);
+}
+static int get_bln_rgb_batt_colored_lvl_0(void) {
+	return uci_get_user_property_int_mm("bln_rgb_batt_colored_lvl_0", colored_charge_level_0, 0, 99);
+}
+static int get_bln_rgb_batt_colored_lvl_1(void) {
+	return uci_get_user_property_int_mm("bln_rgb_batt_colored_lvl_1", colored_charge_level_1, 0, 99);
+}
+static int get_bln_rgb_batt_colored_lvl_2(void) {
+	return uci_get_user_property_int_mm("bln_rgb_batt_colored_lvl_2", colored_charge_level_2, 0, 99);
+}
+static int get_bln_pulse_rgb_blink_on_charger(void) {
+	return uci_get_user_property_int_mm("bln_rgb_pulse_blink_on_charger", pulse_rgb_blink_on_charger, 0, 1);
+}
+static int get_bln_pulse_rgb_blink_on_charger_red_limit(void) {
+	return uci_get_user_property_int_mm("bln_rgb_pulse_blink_on_charger_red_limit", pulse_rgb_blink_on_charger_red_limit, 0, 100);
+}
+
+
+static int pattern_brightness[5][6] = {
+					{0x32,0x90,0xc8,0x90,0x62,0x22}, // normal
+					{0x12,0x36,0x74,0x50,0x30,0x12}, // oneplus5
+					{0xc8,0x10,0xc8,0x10,0xc8,0x00}, // triple
+					{0x10,0x00,0x38,0x00,0xd8,0x00}, // triple up
+					{0xd8,0x00,0x38,0x00,0x10,0x00}, // triple down
+				    };
+static int pattern_time[5][6] = {
+					{0x44,0x44,0x55,0x44,0x44,0x44}, // normal
+					{0x53,0x53,0x55,0x53,0x53,0x53}, // oneplus5
+					{0x44,0x44,0x44,0x44,0x44,0x55}, // triple
+					{0x50,0x50,0x50,0x50,0x50,0x55}, // triple up
+					{0x50,0x50,0x50,0x50,0x50,0x55}, // triple down
+				    };
+static int pattern_time_button[5][6] = {
+					{0x44,0x44,0x54,0x44,0x44,0x44}, // normal
+					{0x53,0x53,0x54,0x53,0x53,0x53}, // oneplus5
+					{0x44,0x44,0x54,0x44,0x44,0x44}, // triple
+					{0x50,0x50,0x54,0x50,0x50,0x50}, // triple up
+					{0x50,0x50,0x54,0x50,0x50,0x50}, // triple down
+				    };
+
+static bool charging = false;
+static int charging_notification_occured_for_rgb = 0;
+static struct work_struct vk_blink_work;
+static struct work_struct vk_unblink_work;
+
+static int charge_level = 0; // information from HTC battery driver
+static int supposedly_charging = 0; // information from led call (multicolor work)
+static int first_level_registered = 0; // when register_charge_level first called set to 1
+static int short_vib_notif = 0; // if short vibration pattern this will be 1
+static struct lp5562_led *g_led_led_data_bln;
+
+static int last_rgb_notification_charge_level = -1;
+static void clear_rgb_notification_on_charger(const char* caller) {
+	pr_info("%s LED %s",__func__,caller);
+	last_rgb_notification_charge_level = -1;
+}
+static void clear_charging_notification_occured_for_rgb(const char* caller) {
+	pr_info("%s LED %s",__func__,caller);
+	charging_notification_occured_for_rgb = 0;
+}
+
+#endif
+#ifdef CONFIG_FB
+	static int screen_on = 1;
+	static int screen_on_early = 1;
+	static unsigned long screen_off_jiffies = 0;
+	struct notifier_block *fb_notifier_led;
+#endif
+
 static int led_rw_delay, chip_enable, rgb_enable, vk_enable;
 static int led_current_time;
 static struct i2c_client *private_lp5562_client = NULL;
 static struct mutex	led_mutex;
 static struct mutex	vk_led_mutex;
+static struct mutex	operation_mutex;
+static struct mutex	enable_mutex;
 static struct workqueue_struct *g_led_work_queue;
+static struct workqueue_struct *g_vk_work_queue;
+static struct workqueue_struct *g_vib_work_queue;
 static uint32_t ModeRGB;
 static int VK_brightness;
 static int last_pwm;
@@ -249,34 +439,95 @@ static int i2c_read_block(struct i2c_client *client,
 	return ret;
 }
 
+static uint8_t latest_set_enable_register = 0;
+
 static int write_enable_register(struct i2c_client *client, uint8_t data, uint8_t vk_led)
 {
 	int ret = 0;
 	uint8_t temp = 0, current_data = 0;
+#if 1
+	int locked = 0;
+	int read_retry = 0;
+	if (mutex_trylock(&enable_mutex)) {
+		locked = 1;
+	} else {
+		pr_info("%s ALARM, CONCURRENT ENABLE \n",__func__);
+	}
+#endif
 
 	if(!rgb_enable && !vk_enable && data == 0) {
 		I("write_enable_register disable\n");
 		ret = i2c_write_block(client, ENABLE_REGISTER, &data, 1);
+		latest_set_enable_register = data;
+#if 1
+		if (locked) mutex_unlock(&enable_mutex);
+#endif
 		return ret;
 	}
 	else
 		temp = 0x40;
-
+#if 1
+	ret = 1;
+	while (ret!=0) {
+#endif
 	ret = i2c_read_block(client, ENABLE_REGISTER, &current_data, 1);
+#if 1
+		if (ret) {
+			I(" ### write_enable_register read error\n");
+			read_retry++;
+			if (read_retry>2) {
+				current_data = latest_set_enable_register;
+				break;
+			}
+			msleep(5);
+		}
+	}
+#endif
 	if(vk_led)
 		temp |= (current_data & RG_Mask) | (data & VK_Mask);
 	else
 		temp |= (data & RG_Mask) | (current_data & VK_Mask);
 
 	ret = i2c_write_block(client, ENABLE_REGISTER, &temp, 1);
+	latest_set_enable_register = temp;
+#if 1
+	if (locked) mutex_unlock(&enable_mutex);
+#endif
 	return ret;
 }
+
+static uint8_t latest_set_operation_register = 0;
+
 static int write_operation_register(struct i2c_client *client, uint8_t data, uint8_t vk_led)
 {
 	int ret = 0;
 	uint8_t temp = 0, current_data = 0;
-
+#if 1
+	int locked = 0;
+	int read_retry = 0;
+	if (mutex_trylock(&operation_mutex)) {
+		locked = 1;
+	} else {
+		pr_info("%s ALARM, CONCURRENT OPERATION \n",__func__);
+	}
+#endif
+#if 1
+	ret = 1;
+	while (ret!=0) {
+#endif
 	ret = i2c_read_block(client, OPRATION_REGISTER, &current_data, 1);
+#if 1
+		if (ret) {
+			I(" ### write_opearation_register read error\n");
+			read_retry++;
+			if (read_retry>2) {
+				current_data = latest_set_operation_register;
+				break;
+			}
+			msleep(5);
+		}
+	}
+#endif
 
 	if(vk_led)
 		temp |= (current_data & RG_Mask) | (data & VK_Mask);
@@ -284,6 +535,10 @@ static int write_operation_register(struct i2c_client *client, uint8_t data, uin
 		temp |= (data & RG_Mask) | (current_data & VK_Mask);
 
 	ret = i2c_write_block(client, OPRATION_REGISTER, &temp, 1);
+	latest_set_operation_register = temp;
+#if 1
+	if (locked) mutex_unlock(&operation_mutex);
+#endif
 	return ret;
 }
 
@@ -475,6 +730,7 @@ static void lp5562_led_disable(struct i2c_client *client)
 
 	data = 0x00;
 	ret = i2c_write_block(client, ENABLE_REGISTER, &data, 1);
+	latest_set_enable_register = data;
 #if 0 // LED enable pin keep high to avoid SRAM abnormal
 	if (plat_data->ena_gpio) {
 		ret = gpio_direction_output(plat_data->ena_gpio, 0);
@@ -497,6 +753,9 @@ static void lp5562_red_long_blink(struct i2c_client *client)
 
 	I(" %s +++\n" , __func__);
 	mutex_lock(&led_mutex);
+#if 1
+	clear_rgb_notification_on_charger(__func__);
+#endif
 	data = 0x10;
 	ret = write_operation_register(client, data, 0);
 	udelay(200);
@@ -539,14 +798,943 @@ static void lp5562_red_long_blink(struct i2c_client *client)
 	I(" %s ---\n" , __func__);
 }
 
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+#if 1
+static uint8_t *lp5562_get_ramp_program(uint8_t *data, int prescale, int step_time, int increment, int steps, int dimness) {
+	data[0] = 0x00;
+	data[1] = 0x00;
+	if (prescale) {
+		data[0] += 0x40;
+	}
+	step_time = step_time * dimness;
+	if (prescale) {
+		if (step_time > 0x3f) {
+			step_time /= 30;
+			data[0] = 0x00; // don't prescale for that much long step_time
+		}
+	}
+	if (step_time > 0x3f) step_time = 0x3f;
+	data[0] += step_time;
+	if (!increment)  {
+		data[1] += 0x80;
+	}
+	steps = steps / dimness;
+	if (steps > 0x7f) steps = 0x7f;
+	data[1] += steps;
+	return data;
+}
+#endif
+
+// smart automation
+static int smart_get_pulse_dimming(void) {
+	int ret = lights_down_divider;
+	int level = smart_get_notification_level(NOTIF_PULSE_LIGHT);
+	if (level==NOTIF_DIM) {
+		ret = 16; // should DIM!
+	}
+	pr_info("%s smart_notif =========== level: %d  pulse_dimming %d \n",__func__, level, ret);
+	return ret;
+}
+static int smart_get_button_dimming(void) {
+	int ret = lights_down_divider;
+	int level = smart_get_notification_level(NOTIF_BUTTON_LIGHT);
+	if (level==NOTIF_DIM) {
+		ret = 16; // should DIM!
+	}
+	pr_info("%s smart_notif =========== level: %d  buttonlight_dimming %d \n",__func__, level, ret);
+	return ret;
+}
+static int smart_get_bln_no_charger_switch(void) {
+	int ret = get_bln_no_charger_switch();
+	int level = smart_get_notification_level(NOTIF_BUTTON_LIGHT);
+	if (level==NOTIF_TRIM) {
+		ret = 0; // should not blink if not on charger
+	}
+	pr_info("%s smart_notif =========== level: %d  bln_no_charger_switch %d \n",__func__, level, ret);
+	return ret;
+}
+
+// ----------------
+
+/* BLN - VK blink codes */
+static int vk_led_step(uint8_t command_data[], int reg_index, uint8_t brightness, uint8_t time, int set_brightness)
+{
+	if (set_brightness) {
+		/*=== Set PWM to brightness ===*/
+		command_data[reg_index++] = 0x40;
+		command_data[reg_index++]  = brightness / ((uci_get_user_property_int_mm("bln_light_level", bln_coeff_divider, 0, 20)+1) * smart_get_button_dimming());
+	}
+
+	/*=== wait for time ===*/
+	command_data[reg_index++] = time;
+	command_data[reg_index++]  = 0x00;
+	return reg_index;
+}
+
+static int virtual_key_led_change_pwm(struct i2c_client *client, int pwm_diff);
+
+static int vk_led_blink = 0;
+
+static uint8_t bln_get_sleep_time(int buttons) {
+		uint8_t data = 0x00;
+		switch (get_bln_speed()) {
+			case 2:
+			data = 0x44;
+			break;
+			case 1:
+			data = get_bln_pulse_rgb_pattern()==RGB_PATTERN_TRIPLE_UP || get_bln_pulse_rgb_pattern()==RGB_PATTERN_TRIPLE_DOWN ? 44 : (buttons?0x7c:0x7c);
+			break;
+			case 0:
+			data = get_bln_pulse_rgb_pattern()==RGB_PATTERN_TRIPLE_UP || get_bln_pulse_rgb_pattern()==RGB_PATTERN_TRIPLE_DOWN ? (buttons?0x7d:0x7c) : (buttons?0x7c:0x7c);
+			break;
+		}
+		return data;
+}
+
+static int bln_get_alarm_time(void) {
+		int data = 0x00;
+		switch (get_bln_speed()) {
+			case 2:
+			data = 1500;
+			break;
+			case 1:
+			data = 2300;
+			break;
+			case 0:
+			data = 3300;
+			break;
+		}
+		return data;
+}
+
+static unsigned long VK_OFF_TIME = 50 * JIFFY_MUL;
+static int vk_off_time_passed = 0;
+/*
+*	check if screen is off, and enough time passed for vk led off process... return 1 if all off.
+*/
+static int vk_screen_is_off(void)
+{
+	unsigned int diff_jiffies = 0;
+	if (screen_on) return 0;
+	diff_jiffies = jiffies - screen_off_jiffies;
+	I("jiffies diff passed : %u\n", diff_jiffies);
+	if (!vk_off_time_passed && diff_jiffies < VK_OFF_TIME) return 0;
+	vk_off_time_passed = 1;
+	I("vk_screen_is_off 1\n");
+	return 1;
+}
+
+static void virtual_key_led_blink(int onoff, int dim)
+{
+	struct i2c_client *client = private_lp5562_client;
+	int ret = 0, reg_index = 0;
+	int dim_division = (onoff?0:dim)?8:1;
+	int dimming = (dim_division * (get_bln_light_level()) * smart_get_button_dimming());
+	int step_time = get_bln_pulse_rgb_pattern() == RGB_PATTERN_ONEPLUS5 ? 7:3;
+	uint8_t data;
+	uint8_t ramp_data[2] = {0x00,0x00};
+	uint8_t command_data[50] = {0};
+
+	if(!client)
+		return;
+
+	I("virtual_key_led_blink +++, onoff = %d\n", onoff);
+	if (!vk_present) return;
+
+	if((onoff || dim) && (vk_screen_is_off() || (!screen_on && bln_on_screenoff))) {
+		vk_led_blink = 1;
+
+		lp5562_led_enable(client, 1);
+
+		data = 0;
+		ret = i2c_write_block(client, ENG_3_PC_CONTROL, &data, 1);
+
+		data = 0x01;
+		ret = write_operation_register(client, data, 1);
+
+		if (short_vib_notif) {
+			short_vib_notif = 0; // reset, so if next time vibration is off, it doesn't accidentally trigger a double blink short notfi...
+			if (get_bln_pulse_rgb_pattern()>RGB_PATTERN_ONEPLUS5) {
+				reg_index = vk_led_step(command_data, reg_index, 0x40 / dim_division, 0x44, 1);
+				reg_index = vk_led_step(command_data, reg_index, 0xc8 / dim_division, 0x44, 1);
+				reg_index = vk_led_step(command_data, reg_index, 0x50 / dim_division, 0x4a, 1);
+				reg_index = vk_led_step(command_data, reg_index, 0xc8 / dim_division, 0x4e, 1);
+				reg_index = vk_led_step(command_data, reg_index, 0xb0 / dim_division, 0x44, 1);
+				reg_index = vk_led_step(command_data, reg_index, 0x40 / dim_division, 0x44, 1);
+			} else {
+// set PWM start vaue to 5
+				command_data[reg_index++] = 0x40;
+				command_data[reg_index++]  = 0x05;
+// Ramp up
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,108,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+// down quick
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,88,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+
+// up quick
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,88,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+// Ramp down
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,107,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+			}
+
+		} else {
+			if (get_bln_pulse_rgb_pattern()>RGB_PATTERN_ONEPLUS5 || dim_division != 1) {
+				reg_index = vk_led_step(command_data, reg_index, 0x20 / dim_division, pattern_time_button[get_bln_pulse_rgb_pattern()][0], 1);
+				reg_index = vk_led_step(command_data, reg_index, 0x70 / dim_division, pattern_time_button[get_bln_pulse_rgb_pattern()][1], 1);
+				reg_index = vk_led_step(command_data, reg_index, 0xb0 / dim_division, pattern_time_button[get_bln_pulse_rgb_pattern()][2], 1);
+				reg_index = vk_led_step(command_data, reg_index, 0xc8 / dim_division, pattern_time_button[get_bln_pulse_rgb_pattern()][3], 1);
+				reg_index = vk_led_step(command_data, reg_index, 0xb0 / dim_division, pattern_time_button[get_bln_pulse_rgb_pattern()][4], 1);
+				reg_index = vk_led_step(command_data, reg_index, 0x40 / dim_division, pattern_time_button[get_bln_pulse_rgb_pattern()][5], 1);
+			} else {
+// set PWM start vaue to 5
+				command_data[reg_index++] = 0x40;
+				command_data[reg_index++]  = 0x05;
+// Ramp command will be: 0100 0010 0000 0100b
+//= 4240h
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,108,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,88,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+// Ramp down 42c0h
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,107,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+
+				lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,88,dimming);
+				command_data[reg_index++] = ramp_data[0];
+				command_data[reg_index++]  = ramp_data[1];
+			}
+		}
+
+		data = bln_get_sleep_time(1);
+		reg_index = vk_led_step(command_data, reg_index, 0x00, data, 1);
+		reg_index = vk_led_step(command_data, reg_index, 0x00, 0x7f, 0);
+		if (get_bln_speed()==0) {
+			reg_index = vk_led_step(command_data, reg_index, 0x00, 0x7f, 0);
+		}
+
+		/* === clear register === */
+//		command_data[reg_index++] = 0x00;
+//		command_data[reg_index++]  = 0x00;
+
+		ret = i2c_write_block(client, CMD_ENG_3_BASE, command_data, reg_index);
+
+		data = 0x02;
+		ret = write_operation_register(client, data, 1);
+		data = 0x42;
+		ret = write_enable_register(client, data, 1);
+	} else if (vk_led_blink && vk_screen_is_off()) {
+#if 1
+		lp5562_led_enable(client, 1);
+
+		// start empty program to set to brightness 0
+		data = 0;
+		ret = i2c_write_block(client, ENG_3_PC_CONTROL, &data, 1);
+
+		data = 0x01;
+		ret = write_operation_register(client, data, 1);
+
+		reg_index = vk_led_step(command_data, reg_index, 0x00, 0x7d, 1);
+
+		/* === clear register === */
+		command_data[reg_index++] = 0x00;
+		command_data[reg_index++]  = 0x00;
+
+		ret = i2c_write_block(client, CMD_ENG_3_BASE, command_data, reg_index);
+
+		data = 0x02;
+		ret = write_operation_register(client, data, 1);
+		data = 0x42;
+		ret = write_enable_register(client, data, 1);
+
+		msleep(5);
+
+		// .. and finally disable the vk led...
+		data = 0x00; // off
+		ret += write_enable_register(client,data,1); // vk off...
+		if (ret) {
+			I("failed to disable vk led 1\n");
+		}
+		msleep(5);
+		data = 0x00; // off
+		ret += write_enable_register(client,data,1); // vk off...
+		if (ret) {
+			I("failed to disable vk led 2\n");
+		}
+		vk_led_blink = 0;
+
+#endif
+	}
+}
+
+extern void kernel_ambient_display(void);
+extern void kernel_ambient_display_led_based(void);
+extern int is_kernel_ambient_display(void);
+extern void stop_kernel_ambient_display(bool interrupt_ongoing);
+
+void register_input_event(const char* caller);
+
+static int blink_running = 0;
+static int vary1 = 1;
+static void vk_unblink_work_func(struct work_struct *work)
+{
+	I(" %s +++\n" , __func__);
+	if (full_or_dim == 1 && get_bln_dim_blink()==1 && get_bln_dim_number() > 0) { // won't keep dim blink?
+		if (!mutex_is_locked(&blinkstopworklock)) {
+			int sleeptime = bln_get_alarm_time() * (vary1?(vary1==2?get_bln_dim_number()+2:get_bln_dim_number()):(get_bln_dim_number()-2));
+
+			ktime_t wakeup_time;
+			ktime_t curr_time = { .tv64 = 0 };
+			wakeup_time = ktime_add_us(curr_time,
+				(sleeptime * 1000LL)); // msec to usec
+
+#if 0 
+// test code
+			vary1 = vary1 + 1;
+			if (vary1>2) vary1 = 0;
+#endif
+
+			alarm_cancel(&blinkstopfunc_rtc); // stop pending alarm...
+			alarm_start_relative(&blinkstopfunc_rtc, wakeup_time); // start new...
+
+			I("%s: Current Time tv_sec: %ld, Alarm set to tv_sec: %ld\n",
+				__func__,
+				ktime_to_timeval(curr_time).tv_sec,
+				ktime_to_timeval(wakeup_time).tv_sec);
+		}
+	}
+	blink_running = get_bln_dim_blink()&&full_or_dim;
+	virtual_key_led_blink(0,get_bln_dim_blink()&&full_or_dim);
+
+	full_or_dim = 0;
+}
+
+static enum alarmtimer_restart blinkstop_rtc_callback(struct alarm *al, ktime_t now)
+{
+	I("%s step trylock\n",__func__);
+	if (!mutex_trylock(&blinkstopworklock)) {
+		I("%s step trylock failed, return \n",__func__);
+		return ALARMTIMER_NORESTART;
+	}
+	I("%s step trylock success \n",__func__);
+
+	I("%s step unblink? .... blinking %d && !screen_on  %d \n",__func__, vk_led_blink, !screen_on);
+	if (vk_led_blink && !screen_on) {
+		I("%s step unblink! 0\n",__func__);
+		queue_work(g_vk_work_queue, &vk_unblink_work);
+	}
+	mutex_unlock(&blinkstopworklock);
+
+	return ALARMTIMER_NORESTART;
+}
+
+
+static int vary = 1;
+static void vk_blink_work_func(struct work_struct *work)
+{
+	int uci_bln_number = get_bln_number();
+	I(" %s +++\n" , __func__);
+	if (screen_on) return;
+	full_or_dim = 1;
+	if (!blink_running) {
+		blink_running = 1;
+		virtual_key_led_blink(1,get_bln_dim_blink());
+	}
+	if (uci_bln_number > 0 && !charging) { // if blink number is not infinite and is not charging, schedule CANCEL work
+		if (!mutex_is_locked(&blinkstopworklock)) {
+			int sleeptime = bln_get_alarm_time() * (vary?(vary==2?uci_bln_number+2:uci_bln_number):(uci_bln_number-2));
+
+			ktime_t wakeup_time;
+			ktime_t curr_time = { .tv64 = 0 };
+			wakeup_time = ktime_add_us(curr_time,
+				(sleeptime * 1000LL)); // msec to usec
+
+#if 0 
+// test code
+			vary = vary + 1;
+			if (vary>2) vary = 0;
+#endif
+
+			alarm_cancel(&blinkstopfunc_rtc); // stop pending alarm...
+			alarm_start_relative(&blinkstopfunc_rtc, wakeup_time); // start new...
+
+			I("%s: Current Time tv_sec: %ld, Alarm set to tv_sec: %ld\n",
+				__func__,
+				ktime_to_timeval(curr_time).tv_sec,
+				ktime_to_timeval(wakeup_time).tv_sec);
+		}
+	}
+	I(" %s ---\n" , __func__);
+}
+
+static int last_charge_state = 0;
+
+DEFINE_SPINLOCK(led_data_lock);
+
+static void led_set_multicolor(int onoff, int red, int green){
+	I(" %s , set display_flag = %d red %d green %d \n" , __func__, onoff, red, green);
+	clear_rgb_notification_on_charger(__func__);
+	if(onoff){
+		__pm_wakeup_event(&(g_led_led_data_bln->led_wake_lock), jiffies_to_msecs(2 * HZ));
+		//wake_lock_timeout(&(g_led_led_data_bln->led_wake_lock), 2*HZ);
+		spin_lock(&led_data_lock);
+		g_led_led_data_bln->Mode = 1;
+		g_led_led_data_bln->Red = red / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+		g_led_led_data_bln->Green = green / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+		g_led_led_data_bln->Blue = 0;
+		queue_work(g_led_work_queue, &g_led_led_data_bln->led_work_multicolor);
+		spin_unlock(&led_data_lock);
+	}else {
+		spin_lock(&led_data_lock);
+		g_led_led_data_bln->Mode = 0;
+		g_led_led_data_bln->Red = 0;
+		g_led_led_data_bln->Green = 0;
+		g_led_led_data_bln->Blue = 0;
+		queue_work(g_led_work_queue, &g_led_led_data_bln->led_work_multicolor);
+		spin_unlock(&led_data_lock);
+	}
+}
+
+
+// depending on red variable different command base is used to write i2c...
+static int color_blink_step_by_color(struct i2c_client *client, uint8_t brightness, uint8_t time, int reg_index, int red)
+{
+	uint8_t data = 0x00;
+	int ret = 0;
+	/* # === set pwm brightness === */
+	data = 0x40;
+	ret = i2c_write_block(client, (red?CMD_ENG_1_BASE:CMD_ENG_2_BASE) + reg_index++, &data, 1);
+	data = brightness / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+	ret = i2c_write_block(client, (red?CMD_ENG_1_BASE:CMD_ENG_2_BASE) + reg_index++, &data, 1);
+	/* === wait time === */
+	data = time;
+	ret = i2c_write_block(client, (red?CMD_ENG_1_BASE:CMD_ENG_2_BASE) + reg_index++, &data, 1);
+	data = 0x00;
+	ret = i2c_write_block(client, (red?CMD_ENG_1_BASE:CMD_ENG_2_BASE) + reg_index++, &data, 1);
+	return reg_index;
+
+}
+
+// will start a gentle blinking of green, to signal something like full battery in charge mode...
+static void led_multicolor_short_transition(void)
+{
+	struct i2c_client *client = private_lp5562_client;
+	uint8_t data = 0x00;
+	int ret, reg_index = 0;
+	uint8_t mode = 0x00;
+
+	if (!client) return;
+
+	I(" %s +++ \n" , __func__);
+	mutex_lock(&led_mutex);
+#if 1
+	clear_rgb_notification_on_charger(__func__);
+#endif
+
+	if (1) // green mode
+		mode |= (3 << 2);
+
+	data = mode & 0x15;
+	ret = write_operation_register(client, data, 0);
+	udelay(200);
+	data = (u8)0;
+	ret = i2c_write_block(client, ENG_1_PC_CONTROL, &data, 1);
+	udelay(200);
+	ret = i2c_write_block(client, ENG_2_PC_CONTROL, &data, 1);
+
+		reg_index = 0;
+		/* # === set green blink === */
+		reg_index = color_blink_step_by_color(client, 0x22, 0x4c, reg_index,0);
+		reg_index = color_blink_step_by_color(client, 0x42, 0x4c, reg_index,0);
+		reg_index = color_blink_step_by_color(client, 0xa0, 0x4c, reg_index,0);
+		reg_index = color_blink_step_by_color(client, 0xc8, 0x4c, reg_index,0);
+		reg_index = color_blink_step_by_color(client, 0xb0, 0x4c, reg_index,0);
+		reg_index = color_blink_step_by_color(client, 0x82, 0x4c, reg_index,0);
+		/* === clear register === */
+		data = 0x00;
+		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+
+	/* === run program === */
+	data = mode & 0x2a;
+	ret = write_operation_register(client, data, 0);
+	udelay(200);
+	data = (mode & 0x2a)|0x40;
+	ret = write_enable_register(client, data, 0);
+	udelay(150);
+	mutex_unlock(&led_mutex);
+	I(" %s ---\n" , __func__);
+}
+static void rgb_charge_short_transition(struct work_struct * rgb_charge_short_transition_work)
+{
+	msleep(1000);
+	led_multicolor_short_transition();
+}
+static DECLARE_WORK(rgb_charge_short_transition_work, rgb_charge_short_transition);
+
+static void rgb_charge_short_transition_async(void) {
+	queue_work(g_led_work_queue,&rgb_charge_short_transition_work);
+}
+
+
+static void led_multicolor_charge_notification(void) {
+	uint8_t ramp_data[2] = {0x00,0x00};
+	int dimming = (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+
+	int speed = charge_level;
+
+	int red = charge_level < get_bln_pulse_rgb_blink_on_charger_red_limit();
+	int reg_base = CMD_ENG_2_BASE;
+
+
+	struct i2c_client *client = private_lp5562_client;
+	uint8_t data = 0x00;
+	uint8_t green = 0xff;
+	int ret, reg_index = 0;
+	uint8_t mode = 0x00;
+	I(" %s +++ \n" , __func__);
+
+	if (!client) return;
+	I(" %s last rg charge level %d charge level %d\n",__func__,last_rgb_notification_charge_level, charge_level);
+
+	if (last_rgb_notification_charge_level == charge_level) return;
+	last_rgb_notification_charge_level = charge_level;
+
+	if (red) {
+		reg_base = CMD_ENG_1_BASE;
+	}
+
+	mutex_lock(&led_mutex);
+
+	if (!red) // green mode
+		mode |= (3 << 2);
+	else  // red mode
+		mode |= (3 << 4);
+
+	data = mode & 0x15;
+	ret = write_operation_register(client, data, 0);
+	udelay(200);
+	data = (u8)0;
+	ret = i2c_write_block(client, ENG_1_PC_CONTROL, &data, 1);
+	udelay(200);
+	ret = i2c_write_block(client, ENG_2_PC_CONTROL, &data, 1);
+
+
+	// green
+	{
+	if (!get_bln_pulse_rgb_blink()) {
+		green = green / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+		/* === set green pwm === */
+		data = 0x40;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+
+		ret = i2c_write_block(client, reg_base + reg_index++, &green, 1);
+		/* === wait 0.064s === */
+		data = 0x44;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		/* === set pwm to 0 === */
+		data = 0x40;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		/* === wait 0.935s === */
+		data = 0x7c;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		/* === wait 0.999s === */
+		data = 0x7f;
+		data = 0x6f;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		/* === clear register === */
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+	} else {
+		I(" %s BLINK +++ green:%d\n" , __func__, green);
+		/* # === set green blink === */
+		if (get_bln_pulse_rgb_pattern()>RGB_PATTERN_ONEPLUS5) {
+			reg_index = color_blink_step_by_color(client, pattern_brightness[get_bln_pulse_rgb_pattern()][0], pattern_time[get_bln_pulse_rgb_pattern()][0], reg_index,red);
+			reg_index = color_blink_step_by_color(client, pattern_brightness[get_bln_pulse_rgb_pattern()][1], pattern_time[get_bln_pulse_rgb_pattern()][1], reg_index,red);
+			reg_index = color_blink_step_by_color(client, pattern_brightness[get_bln_pulse_rgb_pattern()][2], pattern_time[get_bln_pulse_rgb_pattern()][2], reg_index,red);
+			reg_index = color_blink_step_by_color(client, pattern_brightness[get_bln_pulse_rgb_pattern()][3], pattern_time[get_bln_pulse_rgb_pattern()][3], reg_index,red);
+			reg_index = color_blink_step_by_color(client, pattern_brightness[get_bln_pulse_rgb_pattern()][4], pattern_time[get_bln_pulse_rgb_pattern()][4], reg_index,red);
+			reg_index = color_blink_step_by_color(client, pattern_brightness[get_bln_pulse_rgb_pattern()][5], pattern_time[get_bln_pulse_rgb_pattern()][5], reg_index,red);
+		} else {
+			int step_time = ((get_bln_pulse_rgb_pattern() == RGB_PATTERN_ONEPLUS5 ? 7:3)*5)/(speed/10);
+// set PWM start vaue to 5
+			data = 0x40;
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+			data = 0x05;
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+// Ramp command will be: 0100 0010 0000 0100b
+//= 4240h
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,112,dimming);
+			data = ramp_data[0]; // prescale 01000000b + 0x08 step time
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x70 steps
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,88,dimming);
+			data = ramp_data[0];
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x58 steps
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+// Ramp down 42c0h
+
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,112,dimming);
+			data = ramp_data[0]; // prescale 01000000b + 0x08 step time
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x70 steps
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,88,dimming);
+			data = ramp_data[0];
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x58 steps
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		}
+		data = bln_get_sleep_time(0);
+		reg_index = color_blink_step_by_color(client, 0x00, data, reg_index,red);//0x7c, reg_index);
+		/* === wait 0.999s === */
+		data = 0x7f;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+#if 0
+		if (get_bln_speed() == 0) {
+			/* === wait 0.999s === */
+			data = 0x7f;
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+			data = 0x00;
+			ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		}
+#endif
+		/* === clear register === */
+		data = 0x00;
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+		ret = i2c_write_block(client, reg_base + reg_index++, &data, 1);
+	}
+	}
+
+
+	/* === run program === */
+	data = mode & 0x2a;
+	ret = write_operation_register(client, data, 0);
+	udelay(200);
+	data = (mode & 0x2a)|0x40;
+	ret = write_enable_register(client, data, 0);
+	udelay(150);
+	mutex_unlock(&led_mutex);
+	I(" %s ---\n" , __func__);
+}
+static void rgb_blink_on_charge(struct work_struct * rgb_blink_on_charge_work)
+{
+	//msleep(1000);
+        led_multicolor_charge_notification();
+}
+static DECLARE_WORK(rgb_blink_on_charge_work, rgb_blink_on_charge);
+
+static void rgb_blink_on_charge_async(void) {
+	queue_work(g_led_work_queue,&rgb_blink_on_charge_work);
+}
+
+/*
+* set RG led to appropriate red/green ratio for the current battery level...
+* will set multicolor RG led, or at 100% a gently blinking green led.
+* Will only do the operations if level changed or just started to charge...
+*/
+static void led_multi_color_charge_level(int level, bool force) {
+
+	static int last_level = 0;
+	int level_div = level / 5;
+	int level_round = level_div * 5; // rounding by 5;
+	int us_level = (level_round * 235)/100;
+	int red_coeff = 255 - (us_level); // red be a bit more always, except on FULL charge ( 255 - 220 -> Min = 25, except on full where it is 1 )
+	int green_coeff = 235 - red_coeff; // green be a bit less always, except on FULL charge ( Green max is 220, min 1 - except on full where its 255)
+
+	I(" %s charging notif occured for rgb: %d screen_on_early %d\n",__func__,charging_notification_occured_for_rgb, screen_on_early);
+
+	if (charging_notification_occured_for_rgb && !screen_on_early) {
+		// instead of charge color, call notification blinking for RGB led
+		rgb_blink_on_charge_async();
+		return;
+	}
+
+	if (!force && !(get_bln_rgb_batt_colored() && supposedly_charging)) return;
+
+	// check if we're changing from no charge state to charge led and that last received battery level differs from current...
+	if (!force && last_charge_state == supposedly_charging && last_level == level) return; // no change, return
+
+	// store new values into last_ variables
+	last_charge_state = 1;
+	last_level = level;
+
+	if (!get_bln_rgb_batt_colored_discrete()) {
+		if (green_coeff < 1) green_coeff = 10;
+
+		if (level<5) { // under 5, always full RED but low light for red
+			red_coeff = 80;
+			green_coeff = 1;
+		} else
+		if (level<15) { // under 15, always full RED but lower light for red
+			red_coeff = 160;
+			green_coeff = 3;
+		} else
+		if (level<20) { // under 20, always full RED full light for red
+			red_coeff = 255;
+			green_coeff = 7;
+		}
+	} else {
+#if 1
+		if (level < get_bln_rgb_batt_colored_lvl_0()) {
+			green_coeff = 0;
+			red_coeff = 40;
+		} else
+		if (level < get_bln_rgb_batt_colored_lvl_1()) {
+			green_coeff = 40;
+			red_coeff = 160;
+		} else
+		if (level < get_bln_rgb_batt_colored_lvl_2()) {
+			green_coeff = 120;
+			red_coeff = 90;
+		} else {
+			green_coeff = 235;
+			red_coeff = 20;
+		}
+#endif
+	}
+
+	if (level == 100) { // at 100, always full GREEN
+		red_coeff = 1;
+		green_coeff = 255;
+		I("%s color transition at full strength: red %d green %d \n",__func__, red_coeff, green_coeff);
+	}
+
+	if (!get_bln_rgb_batt_colored()) {
+		if (level == 100) {
+			red_coeff = 1;
+			green_coeff = 255;
+		} else {
+			red_coeff = 255;
+			green_coeff = 1;
+		}
+		led_set_multicolor(1, red_coeff, green_coeff);
+	} else {
+		led_set_multicolor(1, red_coeff, green_coeff);
+		if (level == 100) { // at 100, start fading work too for fancy noticeable look
+			rgb_charge_short_transition_async();
+		} 
+	}
+}
+
+// handling haptic notifications if enabled to register notifications even when RGB led is already blinking, or on charger
+static unsigned long last_haptic_jiffies = 0;
+static int last_value = 0;
+static unsigned long MAX_DIFF = 200 * JIFFY_MUL;
+static unsigned long MAX_DIFF_LONG_VIB = 310 * JIFFY_MUL;
+
+#define FINGERPRINT_VIB_TIME_EXCEPTION 40
+#define ALARM_VIB_TIME_EXCEPTION 500
+#define CALL_VIB_TIME_EXCEPTION 1000
+#define SQUEEZE_VIB_TIME_EXCEPTION 15
+#define SQUEEZE_VIB_TIME_EXCEPTION_BASE_2 20
+#define DOUBLETAP_VIB_TIME_EXCEPTION 25
+
+
+#define STACK_LENGTH 10
+
+//extern void register_squeeze_wake(int nanohub_flag, int vibrator_flag, unsigned long timestamp, int init_event_flag);
+extern void register_squeeze(unsigned long timestamp, int vibration);
+
+// callback to register fingerprint vibration
+extern int register_fp_vibration(void);
+
+// vib notification reminder
+extern void set_vib_notification_reminder(int value);
+extern int get_vib_notification_reminder(void);
+extern void set_vib_notification_slowness(int value);
+extern int get_vib_notification_slowness(void);
+extern void set_vib_notification_length(int value);
+extern int get_vib_notification_length(void);
+
+
+void register_input_event(const char * caller) {
+}
+EXPORT_SYMBOL(register_input_event);
+
+/**
+* is bln to be started, based on switches like BLN, bln no charger, smart button dimming and charge state
+*/
+static bool should_start_bln(void) {
+    if (!vk_present) return false;
+    return !vk_led_blink && get_bln_switch() && ((smart_get_bln_no_charger_switch() && !charging && smart_get_button_dimming()==1) || charging);
+}
+static bool should_start_pulse_blink_on_charger(void) {
+	// only start rg blinking if screen is off! otherwise it will get stuck even when dismissing notifs, as that won't stop through RGB led state change
+	int ret = vk_screen_is_off() && get_bln_pulse_rgb_blink_on_charger() && charging;
+	pr_info("LED %s ret = %d\n",__func__,ret);
+	return ret;
+}
+
+
+// if a single haptic vibration was last time interpreted as notif set this true
+// .. based on this next such exact vibration length will be skipped to be interpreted as notif avoiding doubles...
+static bool single_vibration_interpreted_as_notif = false;
+
+// TODO rewrite using ntf listener instead
+int register_haptic(int value)
+{
+	bool vib_notif_pattern_detected = false;
+	unsigned long stack_entries[STACK_LENGTH];
+	struct stack_trace trace = {
+		.nr_entries = 0,
+		.entries = &stack_entries[0],
+
+		.max_entries = STACK_LENGTH,
+
+		/* How many "lower entries" to skip. */
+		.skip = 0
+	};
+	unsigned int diff_jiffies = jiffies - last_haptic_jiffies;
+	last_haptic_jiffies = jiffies;
+	I("%s %d - jiffies diff %u \n",__func__,value, diff_jiffies);
+
+//	if this exceptional time is used, it means, fingerprint scanner vibrated with proxomity sensor detection on
+//	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
+//	same with squeeze vibration time value.
+
+	save_stack_trace(&trace);
+	//WARN_ON(1);
+
+	if (value == DOUBLETAP_VIB_TIME_EXCEPTION) {
+		register_input_event(__func__);
+		return value;
+	}
+	if (value == CALL_VIB_TIME_EXCEPTION || value == ALARM_VIB_TIME_EXCEPTION) {
+		register_input_event(__func__);
+		stop_kernel_ambient_display(true);
+		return value;
+	}
+	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) {
+		int vib_strength = register_fp_vibration();
+		//register_input_event(); // do not register here as long as it's not sure that it actually will wake the device or is just a nonwaking wrong FP scan double vib feedback
+		if (vib_strength > 0 && vib_strength<=FINGERPRINT_VIB_TIME_EXCEPTION*2) return vib_strength/2; else return vib_strength>0?FINGERPRINT_VIB_TIME_EXCEPTION:0;
+	}
+	if (value == SQUEEZE_VIB_TIME_EXCEPTION || value == SQUEEZE_VIB_TIME_EXCEPTION_BASE_2) {
+		last_value = value;
+//		register_squeeze_wake(0,1,jiffies,0);
+		register_squeeze(jiffies,1);
+		return value;
+	}
+
+	if (screen_on && ntf_wake_by_user()) return value;
+
+	// checking repetition of same length vibs
+	if (last_value == value) {
+		if ((value > 500 && diff_jiffies < MAX_DIFF_LONG_VIB) || diff_jiffies < MAX_DIFF) {
+			if (single_vibration_interpreted_as_notif) {
+				single_vibration_interpreted_as_notif = false;
+			} else {
+				vib_notif_pattern_detected = true;
+				if (value <= 200) {
+					short_vib_notif = 1;
+				} else {
+					short_vib_notif = 0;
+				}
+			}
+		} else {
+			// if same length but time diff too long, check for single vibration patter over a 100 msec length...
+			if (value>=100) {
+				single_vibration_interpreted_as_notif = true;
+				vib_notif_pattern_detected = true;
+			} else {
+				single_vibration_interpreted_as_notif = false;
+			}
+		}
+	} else {
+		// checking first time vib length, if over a length, interpret as notif
+		if (value>=100) {
+			single_vibration_interpreted_as_notif = true;
+			vib_notif_pattern_detected = true;
+		} else {
+			single_vibration_interpreted_as_notif = false;
+		}
+	}
+
+	if (vib_notif_pattern_detected) {
+		if (!get_bln_ignore_vibration()) {
+			if (should_start_bln()) {
+				// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
+				bln_on_screenoff = 1;
+				pr_info("%s kad bln_on_screenoff %d\n", __func__, bln_on_screenoff);
+				if (!is_kernel_ambient_display() && !screen_on) queue_work(g_vk_work_queue, &vk_blink_work);
+			}
+		}
+
+		if (should_start_pulse_blink_on_charger()) {
+			charging_notification_occured_for_rgb = 1;
+			rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
+		}
+		kernel_ambient_display();
+	}
+	last_value = value;
+	return value;
+}
+
+EXPORT_SYMBOL(register_haptic);
+
+extern void set_vibrate(int value);
+extern void set_suspend_booster(int value);
+extern void override_kad_on(int on);
+
+/* BLN - color blink codes */
+static int color_blink_step(struct i2c_client *client, uint8_t brightness, uint8_t time, int reg_index)
+{
+	uint8_t data = 0x00;
+	int ret = 0;
+	/* # === set pwm brightness === */
+	data = 0x40;
+	ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+	data = brightness / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+	ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+	/* === wait time === */
+	data = time;
+	ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+	data = 0x00;
+	ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+	return reg_index;
+
+}
+#endif
+
 static void lp5562_color_blink(struct i2c_client *client, uint8_t red, uint8_t green, uint8_t blue)
 {
 	uint8_t data = 0x00;
+	uint8_t ramp_data[2] = {0x00,0x00};
+	int dimming = (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+
 	int ret, reg_index = 0;
 	uint8_t mode = 0x00;
 	I(" %s +++ red:%d, green:%d, blue:%d\n" , __func__, red, green, blue);
 	mutex_lock(&led_mutex);
-
+#if 1
+	clear_rgb_notification_on_charger(__func__);
+#endif
 	if (red)
 		mode |= (3 << 4);
 	if (green)
@@ -599,6 +1787,27 @@ static void lp5562_color_blink(struct i2c_client *client, uint8_t red, uint8_t g
 	}
 	if (green) {
 		reg_index = 0;
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+		// BLN
+		// sysfs configuation bln_no_charger_switch == 1 -> always blink even if not on charger
+		if (get_bln_switch() && ((smart_get_bln_no_charger_switch() && smart_get_button_dimming()==1)||charging)) {
+			if (!ntf_wake_by_user() || vk_screen_is_off()) {
+				// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
+				bln_on_screenoff = 1;
+				pr_info("%s kad bln_on_screenoff %d\n", __func__, bln_on_screenoff);
+			}
+			if (vk_screen_is_off() && should_start_bln()) {
+				if (!is_kernel_ambient_display()) queue_work(g_vk_work_queue, &vk_blink_work);
+			}
+		}
+		if ((vk_screen_is_off() || !ntf_wake_by_user()) && (lights_down_divider==1)) { // only flash if lights_down mode is not active...
+			ntf_led_blink(NTF_LED_GREEN,1);
+//			flash_blink(false);
+		}
+		kernel_ambient_display_led_based(); // TODO move to ntf -> fpf
+		if (!get_bln_pulse_rgb_blink()) {
+		green = green / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
+#endif
 		/* === set green pwm === */
 		data = 0x40;
 		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
@@ -621,6 +1830,7 @@ static void lp5562_color_blink(struct i2c_client *client, uint8_t red, uint8_t g
 		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
 		/* === wait 0.999s === */
 		data = 0x7f;
+		data = 0x6f;
 		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
 		data = 0x00;
 		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
@@ -628,6 +1838,67 @@ static void lp5562_color_blink(struct i2c_client *client, uint8_t red, uint8_t g
 		data = 0x00;
 		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
 		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+		} else {
+		I(" %s BLINK +++ red:%d, green:%d, blue:%d\n" , __func__, red, green, blue);
+		/* # === set green blink === */
+		if (get_bln_pulse_rgb_pattern()>RGB_PATTERN_ONEPLUS5) {
+			reg_index = color_blink_step(client, pattern_brightness[get_bln_pulse_rgb_pattern()][0], pattern_time[get_bln_pulse_rgb_pattern()][0], reg_index);
+			reg_index = color_blink_step(client, pattern_brightness[get_bln_pulse_rgb_pattern()][1], pattern_time[get_bln_pulse_rgb_pattern()][1], reg_index);
+			reg_index = color_blink_step(client, pattern_brightness[get_bln_pulse_rgb_pattern()][2], pattern_time[get_bln_pulse_rgb_pattern()][2], reg_index);
+			reg_index = color_blink_step(client, pattern_brightness[get_bln_pulse_rgb_pattern()][3], pattern_time[get_bln_pulse_rgb_pattern()][3], reg_index);
+			reg_index = color_blink_step(client, pattern_brightness[get_bln_pulse_rgb_pattern()][4], pattern_time[get_bln_pulse_rgb_pattern()][4], reg_index);
+			reg_index = color_blink_step(client, pattern_brightness[get_bln_pulse_rgb_pattern()][5], pattern_time[get_bln_pulse_rgb_pattern()][5], reg_index);
+		} else {
+			int step_time = get_bln_pulse_rgb_pattern() == RGB_PATTERN_ONEPLUS5 ? 7:3;
+// set PWM start vaue to 5
+			data = 0x40;
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+			data = 0x05;
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+// Ramp command will be: 0100 0010 0000 0100b
+//= 4240h
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,112,dimming);
+			data = ramp_data[0]; // prescale 01000000b + 0x08 step time
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x70 steps
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,1,88,dimming);
+			data = ramp_data[0];
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x58 steps
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+// Ramp down 42c0h
+
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,112,dimming);
+			data = ramp_data[0]; // prescale 01000000b + 0x08 step time
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x70 steps
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+
+			lp5562_get_ramp_program(&(ramp_data[0]),0,step_time,0,88,dimming);
+			data = ramp_data[0];
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+			data = ramp_data[1]; // increment 00000000b + 0x58 steps
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+		}
+		data = bln_get_sleep_time(0);
+		reg_index = color_blink_step(client, 0x00, data, reg_index);//0x7c, reg_index);
+		/* === wait 0.999s === */
+		data = 0x7f;
+		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+		data = 0x00;
+		ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+		if (get_bln_speed() == 0) {
+			/* === wait 0.999s === */
+			data = 0x7f;
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+			data = 0x00;
+			ret = i2c_write_block(client, CMD_ENG_2_BASE + reg_index++, &data, 1);
+		}
+		}
+#endif
 	}
 #ifdef LP5562_BLUE_LED
 	if (blue) {
@@ -790,6 +2061,9 @@ static void lp5562_led_off(struct i2c_client *client)
 	}
 
 	mutex_lock(&led_mutex);
+#if 1
+	clear_rgb_notification_on_charger(__func__);
+#endif
 	/* === reset red green blue === */
 	data = 0x00;
 	ret = i2c_write_block(client, R_PWM_CONTROL, &data, 1);
@@ -800,6 +2074,15 @@ static void lp5562_led_off(struct i2c_client *client)
 	ret = write_operation_register(client, data, 0);
 	ret = write_enable_register(client, data, 0);
 	mutex_unlock(&led_mutex);
+
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	// BLN
+	blink_running = 0;
+	if (vk_present) {
+		virtual_key_led_blink(0,0);
+	}
+	ntf_led_off();
+#endif
 
 	if(!rgb_enable && !vk_enable)
 		lp5562_led_disable(client);
@@ -812,17 +2095,21 @@ static void green_blink_mfg(int onoff){
 	I(" %s , set display_flag = %d\n" , __func__, onoff);
 	display_flag = onoff;
 	if(display_flag){
+		spin_lock(&led_data_lock);
 		g_led_led_data->Mode = 2;
 		g_led_led_data->Red = 0;
 		g_led_led_data->Green = 0xc8;
 		g_led_led_data->Blue = 0;
 		queue_work(g_led_work_queue, &g_led_led_data->led_work_multicolor);
+		spin_unlock(&led_data_lock);
 	}else {
+		spin_lock(&led_data_lock);
 		g_led_led_data->Mode = 0;
 		g_led_led_data->Red = 0;
 		g_led_led_data->Green = 0;
 		g_led_led_data->Blue = 0;
 		queue_work(g_led_work_queue, &g_led_led_data->led_work_multicolor);
+		spin_unlock(&led_data_lock);
 	}
 }
 #endif
@@ -888,6 +2175,9 @@ static void multicolor_work_func(struct work_struct *work)
 		lp5562_led_off(client);
 	} else if (ldata->Mode == 1) {  /* === set red, green, blue direct control === */
 		mutex_lock(&led_mutex);
+#if 1
+		clear_rgb_notification_on_charger(__func__);
+#endif
 		ret = i2c_write_block(client, R_PWM_CONTROL, &ldata->Red, 1);
 		ret = i2c_write_block(client, G_PWM_CONTROL, &ldata->Green, 1);
 #ifdef LP5562_BLUE_LED
@@ -942,6 +2232,8 @@ static int virtual_key_led_change_pwm(struct i2c_client *client, int pwm_diff)
 {
 	int target_pwm_diff, ret = 0;
 	uint8_t pc_addr1, pc_addr2, pwm_level, data;
+
+	I("%s: pwm change. pwm diff %d \n", __func__, pwm_diff);
 
 	if(pwm_diff > 0){
 		target_pwm_diff = pwm_diff;
@@ -1066,6 +2358,7 @@ static void virtual_key_led_work_func(struct work_struct *work)
 		return;
 
 	ldata = container_of(work, struct lp5562_led, led_work);
+	I("%s: led work func. vk brightness: %d \n", __func__, ldata->VK_brightness);
 
 	if(ldata->VK_brightness) {
 		if(use_color_table && ldata->VK_brightness < table_level_num){
@@ -1092,8 +2385,7 @@ static void virtual_key_led_work_func(struct work_struct *work)
 		mutex_unlock(&vk_led_mutex);
 		return;
 		}
-
-		lp5562_led_enable(client, 0);
+		lp5562_led_enable(client, 1);
 		data = (u8)gVK_Current_param;
 		ret = i2c_write_block(client, B_CURRENT_CONTROL, &data, 1);
 		ret = i2c_write_block(client, W_CURRENT_CONTROL, &data, 1);
@@ -1111,6 +2403,7 @@ static void virtual_key_led_work_func(struct work_struct *work)
 			return;
 		}
 		mutex_lock(&vk_led_mutex);
+		I("%s: led work func pwm diff %d \n", __func__, -last_pwm);
 		ret = virtual_key_led_change_pwm(client, -last_pwm);
 		last_pwm = 0;
 		mutex_unlock(&vk_led_mutex);
@@ -1151,6 +2444,9 @@ static ssize_t lp5562_charging_led_switch_store(struct device *dev,
 	if(flag == 1 && flag != charging_flag) {
 		charging_flag=flag;
 		mutex_lock(&led_mutex);
+#if 1
+		clear_rgb_notification_on_charger(__func__);
+#endif
 		data = 0x00;
 		ret = i2c_write_block(client, R_PWM_CONTROL, &data, 1);
 		ret = i2c_write_block(client, G_PWM_CONTROL, &data, 1);
@@ -1253,6 +2549,9 @@ static ssize_t lp5562_led_multi_color_store(struct device *dev,
 	led_cdev = (struct led_classdev *)dev_get_drvdata(dev);
 	ldata = container_of(led_cdev, struct lp5562_led, cdev);
 	__pm_wakeup_event(&(ldata->led_wake_lock), jiffies_to_msecs(2 * HZ));
+
+	spin_lock(&led_data_lock);
+
 	ldata->Mode = (val & Mode_Mask) >> 24;
 	ldata->Red = (val & Red_Mask) >> 16;
 	ldata->Green = (val & Green_Mask) >> 8;
@@ -1261,7 +2560,24 @@ static ssize_t lp5562_led_multi_color_store(struct device *dev,
 #endif
 	ModeRGB = val;
 	I(" %s , ModeRGB = %x\n" , __func__, val);
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	supposedly_charging = ldata->Mode == 1 && (ldata->Red > 0 || ldata->Green > 0);
+	I(" %s , RED = %d supposedly charging %d charging %d\n" , __func__, ldata->Red, supposedly_charging, charging);
+
+	if (get_bln_rgb_batt_colored() && supposedly_charging && first_level_registered) {
+		// if it's supposedly charging and first level registered from HTC battery, we can go and set charge level color mix instead of normal multicolor setting later...
+		spin_unlock(&led_data_lock);
+		led_multi_color_charge_level(charge_level, false);
+		// and return so color is not overwritten...
+		return count;
+	}
+	if (supposedly_charging) {
+		ldata->Red = ((val/(rgb_coeff_divider*smart_get_pulse_dimming())) & Red_Mask) >> 16;
+		ldata->Green = ((val/(rgb_coeff_divider*smart_get_pulse_dimming())) & Green_Mask) >> 8;
+	}
+#endif
 	queue_work(g_led_work_queue, &ldata->led_work_multicolor);
+	spin_unlock(&led_data_lock);
 	return count;
 }
 
@@ -1288,7 +2604,10 @@ static void lp5562_vk_led_set_brightness(struct led_classdev *led_cdev,
 					  enum led_brightness brightness)
 {
 	struct lp5562_led *ldata;
-
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	int uci_bln_light_level = get_bln_light_level();
+	int divider = (uci_bln_light_level)*smart_get_button_dimming()>8?4:(uci_bln_light_level<3?1:(uci_bln_light_level/2));
+#endif
 	ldata = container_of(led_cdev, struct lp5562_led, cdev);
 
 	ldata->VK_brightness = brightness == LED_FULL? 256 : brightness;
@@ -1300,9 +2619,34 @@ static void lp5562_vk_led_set_brightness(struct led_classdev *led_cdev,
 
 	VK_brightness = brightness == LED_FULL? 256 : brightness;
 	I(" %s , VK_brightness = %u\n" , __func__, VK_brightness);
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	if (ldata->VK_brightness > 0) {
+		ldata->VK_brightness = ldata->VK_brightness / divider;
+		if (ldata->VK_brightness == 0) ldata->VK_brightness = 1;
+	}
+	if (VK_brightness > 0) {
+		VK_brightness = VK_brightness / divider;
+		if (VK_brightness < 16) VK_brightness = 16;
+	}
+	// if divider set to max, turn off button lights permanently
+	if (uci_bln_light_level==21) {
+		ldata->VK_brightness = 0;
+		VK_brightness = 0;
+		if (vk_present) {
+			if (vk_led_blink) {
+				virtual_key_led_blink(0,0);
+				return;
+			}
+		}
+	}
+	I(" %s , VK_brightness after bln coeff division = %u\n" , __func__, VK_brightness);
+#endif
 
 	if(!virtual_key_led_ignore_flag)
 		queue_work(g_led_work_queue, &ldata->led_work);
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+	vk_led_blink = 0;
+#endif
 	return;
 }
 
@@ -1650,8 +2994,145 @@ static int lp5562_parse_dt(struct device *dev, struct led_i2c_platform_data *pda
 		of_property_read_u32(dt, "lp5562,vk_current_param", &gVK_Current_param);
 	}
 	pdata->vk_use = of_property_read_bool(dt, "lp5562,vk_use");
+	vk_present = pdata->vk_use;
 	return 0;
 }
+
+#ifdef CONFIG_UCI_NOTIFICATIONS
+static int test_level = 0;
+static bool test = false;
+static void ntf_listener(char* event, int num_param, char* str_param) {
+        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+                pr_info("%s leds_qpnp ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
+        }
+
+	if (!strcmp(event,NTF_EVENT_WAKE_EARLY)) {
+		pr_info("%s kad self wake: wake event EARLY\n",__func__);
+		screen_on_early = 1;
+		screen_on = 1;
+		vk_off_time_passed = 0;
+		blink_running = 0;
+		alarm_cancel(&blinkstopfunc_rtc); // stop pending alarm...
+		I("screen on -early\n");
+	} else
+
+	if (!strcmp(event,NTF_EVENT_WAKE_BY_USER) || !strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
+		screen_on = 1;
+		vk_off_time_passed = 0;
+#if 0
+		pulse_rgb_pattern++;
+		if (pulse_rgb_pattern > 4) pulse_rgb_pattern = 0;
+#endif
+		blink_running = 0;
+		alarm_cancel(&blinkstopfunc_rtc); // stop pending alarm...
+		if (ntf_wake_by_user()) {
+			bln_on_screenoff = 0;
+			stop_kernel_ambient_display(false); // TODO move to fpf
+		}
+		// if still charging call charge
+		if (charging_notification_occured_for_rgb && charging && get_bln_pulse_rgb_blink_on_charger() && ntf_wake_by_user()) {
+			clear_charging_notification_occured_for_rgb(__func__);
+			// start charge color, to cancel RGB blinking
+			led_multi_color_charge_level(charge_level, true);
+		}
+		I("screen on\n");
+	} else
+
+	if (!strcmp(event,NTF_EVENT_SLEEP_EARLY)) {
+	} else
+
+	if (!strcmp(event,NTF_EVENT_SLEEP)) {
+		screen_off_jiffies = jiffies;
+		screen_on = 0;
+		screen_on_early = 0;
+		I("screen off\n");
+		if (bln_on_screenoff) {
+			blink_running = 0;
+			pr_info("%s kad bln_on_screenoff %d\n", __func__, bln_on_screenoff);
+			if (should_start_bln()) {
+				queue_work(g_vk_work_queue, &vk_blink_work);
+			}
+		} 
+	} else
+
+	if (!strcmp(event,NTF_EVENT_RINGING)) {
+		stop_kernel_ambient_display(true); // TODO move to fpf
+	} else
+	if (!strcmp(event,NTF_EVENT_NOTIFICATION)) {
+		if (!!num_param) {
+			if (should_start_bln()) {
+				// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
+				bln_on_screenoff = 1;
+				pr_info("%s kad bln_on_screenoff %d\n", __func__, bln_on_screenoff);
+				if (!is_kernel_ambient_display() && !screen_on) queue_work(g_vk_work_queue, &vk_blink_work);
+			}
+			if (should_start_pulse_blink_on_charger()) {
+				charging_notification_occured_for_rgb = 1;
+				rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
+			}
+			kernel_ambient_display(); // TODO move to fpf!
+		}
+	} else
+        if (!strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+                if (charging) {
+                        if (test) num_param = test_level;
+		        charge_level = num_param;
+		        if (get_bln_rgb_batt_colored() && charging && supposedly_charging) {
+		                // TRIGGER COLOR CHANGE of led
+		                I("%s triggering color change to multicolor led %d\n",__func__,charge_level);
+		                led_multi_color_charge_level(charge_level, false);
+		        }
+		        first_level_registered = 1;
+                }
+        } else
+        if (!strcmp(event,NTF_EVENT_INPUT)) {
+		if (charging_notification_occured_for_rgb) {
+			if (charging && get_bln_pulse_rgb_blink_on_charger() && ntf_wake_by_user()) {
+				clear_charging_notification_occured_for_rgb(__func__); // if user wakes phone clear this flag, otherwise it will keep blinking, even when user dismisses a notif
+				// start charge color, to cancel RGB blinking
+				led_multi_color_charge_level(charge_level, true);
+			}
+		}
+		smart_set_last_user_activity_time();
+        } else
+        if (!strcmp(event,NTF_EVENT_CHARGE_STATE)) {
+		bool input_event = false;
+		if (!!num_param != charging) {
+			input_event = true;
+		}
+                charging = !!num_param;
+                if (!charging) {
+                        //last_level = -1;
+                        test_level+=10;
+                        if (test_level>100) test_level = 0;
+                }
+		// if going into no-charge mode, overwrite last charge state, 
+		// ...so next time charging starts multicolored led will be set one time
+		if (!charging) {
+			last_charge_state = 0;
+			clear_charging_notification_occured_for_rgb(__func__); // if user wakes phone clear this flag, otherwise it will keep blinking, even when user dismisses a notif
+		}
+		if (input_event) {
+		        if (charging_notification_occured_for_rgb) {
+		                if (screen_on && charging && get_bln_pulse_rgb_blink_on_charger() && ntf_wake_by_user()) {
+		                        clear_charging_notification_occured_for_rgb(__func__); // if user wakes phone clear this flag, otherwise it will keep blinking, even when user dismisses a notif
+		                        // start charge color, to cancel RGB blinking
+		                        led_multi_color_charge_level(charge_level, true);
+		                }
+		        }
+		//<---->set_last_input_event(__func__);
+		        if (screen_on_early) {
+		                // user is inputing phone, no haptic blinking should trigger BLN when screen off
+		                bln_on_screenoff = 0;
+		        }
+		        smart_set_last_user_activity_time();
+			stop_kernel_ambient_display(true);
+		}
+        }
+}
+#endif
+
+
 
 static int lp5562_led_probe(struct i2c_client *client
 		, const struct i2c_device_id *id)
@@ -1737,8 +3218,16 @@ static int lp5562_led_probe(struct i2c_client *client
 		I("Not use LP5562 LED.\n");
 		goto err_check_chip_not_used;
 	}
+#if 1
+	mutex_init(&operation_mutex);
+	mutex_init(&enable_mutex);
+#endif
 
 	g_led_work_queue = create_singlethread_workqueue("led");
+#if 1
+	g_vk_work_queue = g_led_work_queue; // this didn't work out at all: create_singlethread_workqueue("vk_wq"); they collide in i2c write/read!
+	g_vib_work_queue = create_singlethread_workqueue("vib_wq");
+#endif
 	if (!g_led_work_queue) {
 		ret = -10;
 		pr_err("[LED] %s: create workqueue fail %d\n", __func__, ret);
@@ -1761,6 +3250,10 @@ static int lp5562_led_probe(struct i2c_client *client
 			ret = device_create_file(cdata->leds[i].cdev.dev, &dev_attr_set_color_ID);
 
 			INIT_WORK(&cdata->leds[i].led_work, virtual_key_led_work_func);
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+			INIT_WORK(&vk_blink_work, vk_blink_work_func);
+			INIT_WORK(&vk_unblink_work, vk_unblink_work_func);
+#endif 
 			//INIT_WORK(&cdata->leds[i].led_work_multicolor, virtual_key_led_blink_work_func);
 			INIT_DELAYED_WORK(&cdata->leds[i].blink_delayed_work, led_fade_do_work);
 			mutex_init(&vk_led_mutex);
@@ -1796,6 +3289,12 @@ static int lp5562_led_probe(struct i2c_client *client
 				pr_err("%s: failed on create attr charging_led_switch [%d]\n", __func__, i);
 				goto err_register_attr_charging_led_switch;
 			}
+#ifdef CONFIG_LEDS_QPNP_BUTTON_BLINK
+			g_led_led_data_bln = &cdata->leds[i];
+			alarm_init(&blinkstopfunc_rtc, ALARM_REALTIME,
+				blinkstop_rtc_callback);
+			ntf_add_listener(ntf_listener);
+#endif
 			wakeup_source_init(&cdata->leds[i].led_wake_lock, "lp5562");
 			INIT_WORK(&cdata->leds[i].led_work, led_work_func);
 			INIT_WORK(&cdata->leds[i].led_work_multicolor, multicolor_work_func);
@@ -1831,6 +3330,10 @@ static int lp5562_led_probe(struct i2c_client *client
 			ret = gpio_direction_output(pdata->tp_3v3_en, 1);
 		green_blink_mfg(1);
 	}
+#endif
+
+#if 1
+	probe_finished = 1;
 #endif
 	return 0;
 
@@ -1900,6 +3403,10 @@ static int lp5562_led_remove(struct i2c_client *client)
 		led_classdev_unregister(&cdata->leds[i].cdev);
 	}
 	destroy_workqueue(g_led_work_queue);
+#if 1
+	destroy_workqueue(g_vk_work_queue);
+	destroy_workqueue(g_vib_work_queue);
+#endif
 	kfree(cdata);
 
 	return 0;
