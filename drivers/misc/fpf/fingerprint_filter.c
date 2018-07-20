@@ -227,7 +227,7 @@ static void fpf_pwrtrigger(int vibration, const char caller[]);
 
 
 // register input event alarm timer
-void register_input_event(const char* caller) { 
+static void register_input_event(const char* caller) { 
 	ntf_input_event(caller,"");
 }
 
@@ -2220,8 +2220,6 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 }
 EXPORT_SYMBOL(register_squeeze);
 
-//extern int input_is_charging(void);
-int input_is_charging(void) { return 0; }
 
 static unsigned long kad_first_one_finger_touch_time = 0;
 static unsigned long kad_first_one_finger_done = 0;
@@ -2230,7 +2228,7 @@ static unsigned long kad_first_one_finger_done = 0;
 void do_kernel_ambient_display(void) {
 	pr_info("%s kad -- screen_on %d kad_running %d \n",__func__,screen_on, kad_running);
 
-	if (uci_get_user_property_int_mm("kad_only_on_charger", kad_only_on_charger, 0, 1) && !input_is_charging()) return;
+	if (uci_get_user_property_int_mm("kad_only_on_charger", kad_only_on_charger, 0, 1) && !ntf_is_charging()) return;
 
 	if (!screen_on && !kad_running) {
 		start_kad_running(0);
@@ -2293,7 +2291,7 @@ void stop_kernel_ambient_display(bool interrupt_ongoing) {
 }
 EXPORT_SYMBOL(stop_kernel_ambient_display);
 int is_kernel_ambient_display(void) {
-	return should_kad_start() && (!uci_get_user_property_int_mm("kad_only_on_charger", kad_only_on_charger, 0, 1) || input_is_charging());
+	return should_kad_start() && (!uci_get_user_property_int_mm("kad_only_on_charger", kad_only_on_charger, 0, 1) || ntf_is_charging());
 }
 EXPORT_SYMBOL(is_kernel_ambient_display);
 
@@ -2415,9 +2413,6 @@ static unsigned long last_vol_key_1_timestamp = 0;
 static unsigned long last_vol_key_2_timestamp = 0;
 static unsigned long last_vol_keys_start = 0;
 
-//extern void register_double_volume_key_press(int long_press);
-void register_double_volume_key_press(int long_press) { }
-
 static bool filtered_ts_event = false;
 static unsigned long filtering_ts_event_last_event = 0;
 static int kad_finger_counter = 0;
@@ -2476,16 +2471,16 @@ static bool ts_input_filter(struct input_handle *handle,
 	if (type == EV_KEY && code == KEY_VOLUMEUP && value == 0) {
 		last_vol_key_1_timestamp = jiffies;
 		if (last_vol_key_1_timestamp - last_vol_key_2_timestamp < 7 * JIFFY_MUL) {
-			unsigned int start_diff = jiffies - last_vol_keys_start;
-			register_double_volume_key_press( (start_diff > 50 * JIFFY_MUL) ? ((start_diff > 100 * JIFFY_MUL)?2:1):0 );
+//			unsigned int start_diff = jiffies - last_vol_keys_start;
+//			register_double_volume_key_press( (start_diff > 50 * JIFFY_MUL) ? ((start_diff > 100 * JIFFY_MUL)?2:1):0 );
 		}
 		goto skip_ts;
 	}
 	if (type == EV_KEY && code == KEY_VOLUMEDOWN && value == 0) {
 		last_vol_key_2_timestamp = jiffies;
 		if (last_vol_key_2_timestamp - last_vol_key_1_timestamp < 7 * JIFFY_MUL) {
-			unsigned int start_diff = jiffies - last_vol_keys_start;
-			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL ? ((start_diff > 100 * JIFFY_MUL)?2:1):0 );
+//			unsigned int start_diff = jiffies - last_vol_keys_start;
+//			register_double_volume_key_press(start_diff > 50 * JIFFY_MUL ? ((start_diff > 100 * JIFFY_MUL)?2:1):0 );
 		}
 		goto skip_ts;
 	}
