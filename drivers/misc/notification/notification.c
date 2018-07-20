@@ -63,6 +63,18 @@ EXPORT_SYMBOL(ntf_silent);
 bool ntf_ringing = false;
 EXPORT_SYMBOL(ntf_ringing);
 
+
+// helper functions
+
+static long get_global_mseconds(void) {
+        struct timespec ts;
+        long ret = 0;
+        getnstimeofday(&ts);
+        ret = (ts.tv_sec*1000LL) + ((ts.tv_nsec)/(1000LL*1000LL));
+        //I("%s time = %ld",__func__,ret);
+        return ret;
+}
+
 // listeners
 
 static void (*ntf_listeners[100])(char* event, int num_param, char* str_param);
@@ -85,6 +97,7 @@ void ntf_add_listener(void (*f)(char* event, int num_param, char* str_param)) {
 EXPORT_SYMBOL(ntf_add_listener);
 
 static bool screen_on = false, screen_on_early = false, screen_off_early = false;
+static long last_input_event = 0;
 
 // ======= SCREEN ON/OFF
 
@@ -104,6 +117,11 @@ EXPORT_SYMBOL(ntf_is_screen_early_off);
 // ======= CHARGE
 
 bool is_charging = false;
+bool ntf_is_charging(void) {
+	return is_charging;
+}
+EXPORT_SYMBOL(ntf_is_charging);
+
 bool charge_state_changed = true;
 void ntf_set_charge_state(bool on) {
 #ifdef NTF_D_LOG
@@ -132,6 +150,10 @@ void ntf_set_charge_level(int level) {
 }
 EXPORT_SYMBOL(ntf_set_charge_level);
 
+// wake_by_user: used for AmbientDisplay detection:
+// this if true, then device is waken by user. Otherwise no Input device was triggered, so we can deduce that it's an AmibentDisplay wake
+// and therefore if this is 0, Flashlight notification can be triggered, and bln_on_screenoff also can be stored, so that BLN can be
+// triggered later when screen is self BLANKing / screen off....
 static bool wake_by_user = true;
 static unsigned long screen_off_jiffies = 0;
 
@@ -143,12 +165,14 @@ static int fb_notifier_callback(struct notifier_block *self,
 {
     struct fb_event *evdata = data;
     int *blank;
+    long last_input_event_diff = (get_global_mseconds() - last_input_event);
 
     if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK ) {
         blank = evdata->data;
         switch (*blank) {
         case FB_BLANK_UNBLANK:
 		screen_on_early = true;
+		ntf_notify_listeners(NTF_EVENT_WAKE_EARLY,1,"");
 		pr_info("ntf uci screen on -early\n");
             break;
 
@@ -157,6 +181,7 @@ static int fb_notifier_callback(struct notifier_block *self,
         case FB_BLANK_VSYNC_SUSPEND:
         case FB_BLANK_NORMAL:
 		screen_off_early = true;
+		ntf_notify_listeners(NTF_EVENT_SLEEP_EARLY,1,"");
 		pr_info("ntf uci screen off -early\n");
             break;
         }
@@ -166,12 +191,19 @@ static int fb_notifier_callback(struct notifier_block *self,
         switch (*blank) {
         case FB_BLANK_UNBLANK:
 		pr_info("ntf uci screen on\n");
+                wake_by_user = first_unblank || last_input_event_diff < 1400;
 		if (first_unblank) {
 			first_unblank = 0;
 		}
+		pr_info("[cleanslate] ntf uci screen on , wake_by_user = %d last input diff %d \n", wake_by_user, (int)last_input_event_diff);
 		screen_on = true;
 		screen_on_early = true;
 		screen_off_early = false;
+		if (wake_by_user) {
+			ntf_notify_listeners(NTF_EVENT_WAKE_BY_USER,1,"");
+		} else {
+			ntf_notify_listeners(NTF_EVENT_WAKE_BY_FRAMEWORK,1,"");
+		}
             break;
 
         case FB_BLANK_POWERDOWN:
@@ -183,6 +215,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 		screen_on = false;
 		screen_on_early = false;
 		screen_off_early = true;
+		ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
             break;
         }
     }
@@ -198,6 +231,7 @@ static int fb_notifier_callback(
 {
     struct msm_drm_notifier *evdata = data;
     unsigned int blank;
+    long last_input_event_diff = (get_global_mseconds() - last_input_event);
 
     if (val != MSM_DRM_EARLY_EVENT_BLANK && val != MSM_DRM_EVENT_BLANK)
 	return 0;
@@ -214,10 +248,12 @@ static int fb_notifier_callback(
 	switch (blank) {
 	case MSM_DRM_BLANK_POWERDOWN:
 		screen_off_early = true;
+		ntf_notify_listeners(NTF_EVENT_SLEEP_EARLY,1,"");
 		pr_info("ntf uci screen off\n");
 	    break;
 	case MSM_DRM_BLANK_UNBLANK:
 		screen_on_early = true;
+		ntf_notify_listeners(NTF_EVENT_WAKE_EARLY,1,"");
 		pr_info("ntf uci screen on\n");
 	    break;
 	default:
@@ -236,17 +272,22 @@ static int fb_notifier_callback(
 		screen_off_early = true;
 		wake_by_user = false;
 		screen_off_jiffies = jiffies;
+		ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
 	    break;
 	case MSM_DRM_BLANK_UNBLANK:
 		pr_info("ntf uci screen oh\n");
+                wake_by_user = first_unblank || last_input_event_diff < 1400;
 		if (first_unblank) {
 			first_unblank = 0;
 		}
+		pr_info("[cleanslate] ntf uci screen on , wake_by_user = %d last input diff %d \n", wake_by_user, (int)last_input_event_diff);
 		screen_on = true;
 		screen_on_early = true;
 		screen_off_early = false;
 		if (wake_by_user) {
-			ntf_notify_listeners(NTF_WAKE_BY_USER,1,"");
+			ntf_notify_listeners(NTF_EVENT_WAKE_BY_USER,1,"");
+		} else {
+			ntf_notify_listeners(NTF_EVENT_WAKE_BY_FRAMEWORK,1,"");
 		}
 	    break;
 	default:
@@ -263,14 +304,15 @@ bool ntf_wake_by_user(void) {
 }
 EXPORT_SYMBOL(ntf_wake_by_user);
 
+void set_last_input_event(const char * caller) {
+        //I("%s caller %s",__func__,caller);
+        last_input_event = get_global_mseconds();
+}
 void ntf_input_event(const char* caller, const char *param) {
 	// input event happened, stop stuff, store timesamp, set wake_by_user
-	if (!wake_by_user) {
-		wake_by_user = true; // TODO check screen off events
-		ntf_notify_listeners(NTF_WAKE_BY_USER,1,"");
-	} else { 
-		wake_by_user = true; // TODO check screen off events
-	}
+	set_last_input_event(__func__);
+	wake_by_user = true;
+	ntf_notify_listeners(NTF_EVENT_INPUT,1,(char *)param);
 }
 EXPORT_SYMBOL(ntf_input_event);
 
@@ -299,6 +341,10 @@ void ntf_led_blink(enum notif_led_type led, bool on) {
 	}
 }
 EXPORT_SYMBOL(ntf_led_blink);
+
+void ntf_led_off(void) {
+	ntf_notify_listeners(NTF_EVENT_NOTIFICATION,0,"off");
+}
 
 static int last_notification_number = 0;
 // registered sys uci listener

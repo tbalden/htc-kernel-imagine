@@ -27,7 +27,12 @@ enum notif_led_type {
 #define NTF_EVENT_RINGING "ringing"
 #define NTF_EVENT_CHARGE_STATE "charge_state"
 #define NTF_EVENT_CHARGE_LEVEL "charge_level"
-#define NTF_WAKE_BY_USER "wake_by_user"
+#define NTF_EVENT_INPUT "input"
+#define NTF_EVENT_WAKE_BY_USER "wake_by_user"
+#define NTF_EVENT_WAKE_BY_FRAMEWORK "wake_by_framework"
+#define NTF_EVENT_WAKE_EARLY "wake_early"
+#define NTF_EVENT_SLEEP_EARLY "sleep_early"
+#define NTF_EVENT_SLEEP "sleep"
 
 #define NTF_EVENT_NOTIFICATION_ARG_HAPTIC "haptic"
 
@@ -50,6 +55,7 @@ extern bool ntf_is_screen_early_off(void);
 // charge callbacks to notify ntf - call it from battery/policy drivers
 extern void ntf_set_charge_state(bool on);
 extern void ntf_set_charge_level(int level);
+extern bool ntf_is_charging(void);
 
 // flashlight
 extern void ntf_set_cam_flashlight(bool on);
@@ -62,6 +68,8 @@ extern void ntf_input_event(const char* caller, const char *param);
 extern void ntf_vibration(int val);
 // led blink events
 extern void ntf_led_blink(enum notif_led_type led, bool on);
+// led off - possibly notification over...
+extern void ntf_led_off(void);
 
 /** add change listener */
 extern void ntf_add_listener(void (*f)(char* event, int num_param, char* str_param));
