@@ -63,6 +63,9 @@ static int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
 static int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
 static int flash_only_face_down = 1;
 
+static int get_flash_ignore_vibration(void) {
+	return uci_get_user_property_int_mm("flash_ignore_vibration", 0, 0, 1);
+}
 static int uci_get_flash_haptic_mode(void) {
 	return uci_get_user_property_int_mm("flash_haptic_mode", haptic_mode, 0, 1);
 }
@@ -607,6 +610,8 @@ void flash_blink(bool haptic) {
 	if (!smart_get_flash_blink_on()) return;
 	// if not a haptic notificcation and haptic blink mode on, do not do blinking...
 	if (!haptic && uci_get_flash_haptic_mode()) return;
+	if (haptic && get_flash_ignore_vibration()) return;
+
 	// if torch i on, don't blink
 	if (currently_torch_mode) return;
 
@@ -692,16 +697,22 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		pr_info("%s blink ntf_timer listener event %s %d %s\n",__func__,event,num_param,str_param);
 	}
 	if (!strcmp(event,NTF_EVENT_NOTIFICATION)) {
-		if (!ntf_is_screen_on() || !ntf_wake_by_user())
-		{
-			if (str_param && !strcmp(str_param,NTF_EVENT_NOTIFICATION_ARG_HAPTIC)) {
-				flash_blink(true); // haptic feedback based detection...
-			} else {
-				flash_blink(false);
+		if (!!num_param) {
+			// notif started
+			if (!ntf_is_screen_on() || !ntf_wake_by_user())
+			{
+				if (str_param && !strcmp(str_param,NTF_EVENT_NOTIFICATION_ARG_HAPTIC)) {
+					flash_blink(true); // haptic feedback based detection...
+				} else {
+					flash_blink(false);
+				}
 			}
+		} else {
+			// notif over
+			flash_stop_blink();
 		}
 	}
-	if (!strcmp(event,NTF_WAKE_BY_USER)) {
+	if (!strcmp(event,NTF_EVENT_WAKE_BY_USER)) {
 		flash_stop_blink();
 	}
 	if (!strcmp(event,NTF_EVENT_RINGING)) {
