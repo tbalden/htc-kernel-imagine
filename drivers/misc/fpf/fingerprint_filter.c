@@ -721,6 +721,11 @@ static void fpf_vib(void) {
 	// avoid using squeeze vib length 15...
 	set_vibrate(get_vib_strength()==15?14:get_vib_strength());
 }
+static void fpf_vib_work_func(struct work_struct * fpf_vib_work) {
+	fpf_vib();
+}
+static DECLARE_WORK(fpf_vib_work, fpf_vib_work_func);
+
 
 /* PowerKey trigger */
 static void fpf_pwrtrigger(int vibration, const char caller[]) {
@@ -741,7 +746,7 @@ static void fpf_input_event(struct input_handle *handle, unsigned int type,
 
 static int fpf_input_dev_filter(struct input_dev *dev) {
 	pr_info("%s %s\n",__func__, dev->name);
-	if (strstr(dev->name, "uinput-fpc") || strstr(dev->name, "fpc1020") || strstr(dev->name, "gf_input")) {
+	if (strstr(dev->name, "uinput-fpc") || strstr(dev->name, "fpc1020") || strstr(dev->name, "gf_input") || strstr(dev->name, "uinput-goodix")) {
 		return 0;
 	} else {
 		return 1;
@@ -851,7 +856,7 @@ static void fpf_home_button_func(struct work_struct * fpf_presspwr_work) {
 			}
 		} else {
 			if (do_home_button_off_too_in_work_func) {
-				write_uci_out();
+				write_uci_out("fp_touch");
 			}
 		}
 	} 
@@ -878,7 +883,10 @@ static void fpf_home_button_func_trigger(void) {
 			} else { 
 				powering_down_with_fingerprint_still_pressed = 0; 
 			}
-			fpf_pwrtrigger(1,__func__);
+			fpf_vib();
+			schedule_work(&fpf_vib_work);
+			mdelay(150); // delay a bit, so finger up can trigger input event in goofix driver before screen off suspend...causes issues with fp input events after screen wake otherwise
+			fpf_pwrtrigger(0,__func__);
 			do_home_button_off_too_in_work_func = 0;
 		}
                 return;
@@ -980,7 +988,7 @@ static enum alarmtimer_restart triple_tap_rtc_callback(struct alarm *al, ktime_t
 	input_sync(fpf_pwrdev);
 	input_report_key(fpf_pwrdev, get_fpf_key(), 0);
 	input_sync(fpf_pwrdev);
-	} else write_uci_out();
+	} else write_uci_out("fp_touch");
 	return ALARMTIMER_NORESTART;
 }
 
@@ -1015,6 +1023,9 @@ static bool fpf_input_filter(struct input_handle *handle,
 #endif
 		return false;
 	}
+
+	if (code != KEY_HOME && code != KEY_WAKEUP) // avoid ?? KEY_EAST ? 305 // OP6
+		return false; // do not react on this code...
 
 
 	if (code == KEY_WAKEUP) {
@@ -1111,7 +1122,7 @@ static bool fpf_input_filter(struct input_handle *handle,
 								input_sync(fpf_pwrdev);
 								input_report_key(fpf_pwrdev, get_fpf_key(), 0);
 								input_sync(fpf_pwrdev);
-								} else write_uci_out();
+								} else write_uci_out("fp_touch");
 							}
 						}
 					}
@@ -1150,7 +1161,7 @@ static bool fpf_input_filter(struct input_handle *handle,
 						pr_info("fpf %s do key_home 0 sync as job was done, but without the possible signalling for HOME 0\n",__func__);
 						input_report_key(fpf_pwrdev, get_fpf_key(), 0);
 						input_sync(fpf_pwrdev); 
-						} else write_uci_out();
+						} else write_uci_out("fp_touch");
 				} else {
 				// job is not yet finished in home button func work, let's signal it, to do the home button = 0 sync as well
 					if (screen_on) {
