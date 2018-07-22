@@ -191,7 +191,8 @@ static int fb_notifier_callback(struct notifier_block *self,
         switch (*blank) {
         case FB_BLANK_UNBLANK:
 		pr_info("ntf uci screen on\n");
-                wake_by_user = first_unblank || last_input_event_diff < 1400;
+                wake_by_user = true; //first_unblank || last_input_event_diff < 1400; // TODO to identify wake by ambient display, this callback is not sufficient. for now setting wake by user all the time
+		// ...as after motion launch or Always on there's no screen on event again when pressing an input... so this is not called at that time
 		if (first_unblank) {
 			first_unblank = 0;
 		}
@@ -276,7 +277,8 @@ static int fb_notifier_callback(
 	    break;
 	case MSM_DRM_BLANK_UNBLANK:
 		pr_info("ntf uci screen oh\n");
-                wake_by_user = first_unblank || last_input_event_diff < 1400;
+                wake_by_user = true; //first_unblank || last_input_event_diff < 1400; // TODO to identify wake by ambient display, this callback is not sufficient. for now setting wake by user all the time
+		// ...as after motion launch or Always on there's no screen on event again when pressing an input... so this is not called at that time
 		if (first_unblank) {
 			first_unblank = 0;
 		}
