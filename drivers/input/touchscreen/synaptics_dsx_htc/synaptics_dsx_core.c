@@ -50,6 +50,10 @@
 #include <linux/async.h>
 #endif
 
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#include <linux/notification/notification.h>
+#endif
+
 #define INPUT_PHYS_NAME "synaptics_dsx/touch_input"
 #define STYLUS_PHYS_NAME "synaptics_dsx/stylus"
 
@@ -7846,6 +7850,9 @@ static void synaptics_switch_sensor_hub(struct synaptics_rmi4_data *rmi4_data, i
 			gpio_direction_output(bdata->switch_gpio, !bdata->switch_hub_state);
 			rmi4_data->i2c_to_mcu = SWITCH_TO_CPU;
 			pr_info("[SensorHub] Switch touch i2c to CPU\n");
+#ifdef CONFIG_UCI_NOTIFICATIONS
+			ntf_screen_full_on();
+#endif
 			break;
 		case SWITCH_TO_MCU:
 			if (bdata->support_eg_blk && rmi4_data->touch_detect == true) {
@@ -7874,6 +7881,9 @@ static void synaptics_switch_sensor_hub(struct synaptics_rmi4_data *rmi4_data, i
 			gpio_direction_output(bdata->switch_gpio, bdata->switch_hub_state);
 			rmi4_data->i2c_to_mcu = SWITCH_TO_MCU_AOD;
 			pr_info("[SensorHub] Switch touch i2c to MCU (AOD)\n");
+#ifdef CONFIG_UCI_NOTIFICATIONS
+			ntf_screen_aod_on();
+#endif
 #ifdef CONFIG_NANOHUB_AOD
 			nanohub_tp_mode(LCD_MODE_U2);
 #endif

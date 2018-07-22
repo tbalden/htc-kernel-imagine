@@ -235,7 +235,8 @@ static int fb_notifier_callback(
     unsigned int blank;
     long last_input_event_diff = (get_global_mseconds() - last_input_event);
 
-    if (val != MSM_DRM_EARLY_EVENT_BLANK && val != MSM_DRM_EVENT_BLANK)
+    // allow in all plus new type REQUEST_EVENT_BLANK to catch AOD -> normal screen on events
+    if (val != MSM_DRM_EARLY_EVENT_BLANK && val != MSM_DRM_EVENT_BLANK && val != MSM_DRM_REQUEST_EVENT_BLANK)
 	return 0;
 
     if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
@@ -263,18 +264,20 @@ static int fb_notifier_callback(
 	    break;
 	}
     }
-    if (evdata && evdata->data && val ==
-	MSM_DRM_EVENT_BLANK) {
+    if (evdata && evdata->data && (val ==
+	MSM_DRM_EVENT_BLANK || val == MSM_DRM_REQUEST_EVENT_BLANK)) {
 	blank = *(int *)(evdata->data);
 	switch (blank) {
 	case MSM_DRM_BLANK_POWERDOWN:
-		pr_info("ntf uci screen off\n");
-		screen_on = false;
-		screen_on_early = false;
-		screen_off_early = true;
-		//wake_by_user = false; // TODO set this back uncommented if AOD detection is fine
-		screen_off_jiffies = jiffies;
-		ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
+		if (val!=MSM_DRM_REQUEST_EVENT_BLANK) {
+			pr_info("ntf uci screen off\n");
+			screen_on = false;
+			screen_on_early = false;
+			screen_off_early = true;
+			//wake_by_user = false; // TODO set this back uncommented if AOD detection is fine
+			screen_off_jiffies = jiffies;
+			ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
+		}
 	    break;
 	case MSM_DRM_BLANK_UNBLANK:
 		pr_info("ntf uci screen oh\n");
@@ -301,6 +304,30 @@ static int fb_notifier_callback(
     return NOTIFY_OK;
 }
 #endif
+
+void ntf_screen_aod_on(void) {
+//	wake_by_user = false;
+	pr_info("fpf ntf uci AOD on\n");
+}
+EXPORT_SYMBOL(ntf_screen_aod_on);
+
+void ntf_screen_full_on(void) {
+/*	pr_info("fpf ntf uci fullscreen on\n");
+//	wake_by_user // TODO
+	if (!screen_on) {
+		screen_on = true;
+		screen_on_early = true;
+		screen_off_early = false;
+		if (wake_by_user) {
+			ntf_notify_listeners(NTF_EVENT_WAKE_BY_USER,1,"");
+		} else {
+			ntf_notify_listeners(NTF_EVENT_WAKE_BY_FRAMEWORK,1,"");
+		}
+	}*/
+}
+EXPORT_SYMBOL(ntf_screen_full_on);
+
+//
 
 bool ntf_wake_by_user(void) {
 	return wake_by_user;

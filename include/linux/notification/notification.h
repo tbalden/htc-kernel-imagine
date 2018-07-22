@@ -71,6 +71,10 @@ extern void ntf_led_blink(enum notif_led_type led, bool on);
 // led off - possibly notification over...
 extern void ntf_led_off(void);
 
+// AOD
+extern void ntf_screen_aod_on(void);
+extern void ntf_screen_full_on(void);
+
 /** add change listener */
 extern void ntf_add_listener(void (*f)(char* event, int num_param, char* str_param));
 
