@@ -17,6 +17,10 @@
 #include <qcom/smb-reg.h>
 #include <qcom/fg-reg.h>
 
+#ifdef UCI_NOTIFICATIONS
+#include <linux/notification/notification.h>
+#endif
+
 static struct htc_battery_info htc_batt_info;
 static struct htc_battery_timer htc_batt_timer;
 
@@ -1594,6 +1598,10 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 	}
 	htc_batt_info.prev.level = htc_batt_info.rep.level;
 	htc_batt_info.prev.level_raw = htc_batt_info.rep.level_raw;
+
+#ifdef UCI_NOTIFICATIONS
+	ntf_set_charge_level(htc_batt_info.rep.level);
+#endif
 
 	s_first = 0;
 }
