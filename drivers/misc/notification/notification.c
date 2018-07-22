@@ -216,6 +216,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 		screen_on = false;
 		screen_on_early = false;
 		screen_off_early = true;
+		//wake_by_user = false; // TODO set this back uncommented if AOD detection is fine
 		ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
             break;
         }
@@ -271,7 +272,7 @@ static int fb_notifier_callback(
 		screen_on = false;
 		screen_on_early = false;
 		screen_off_early = true;
-		wake_by_user = false;
+		//wake_by_user = false; // TODO set this back uncommented if AOD detection is fine
 		screen_off_jiffies = jiffies;
 		ntf_notify_listeners(NTF_EVENT_SLEEP,1,"");
 	    break;
