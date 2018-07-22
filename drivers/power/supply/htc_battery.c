@@ -17,7 +17,7 @@
 #include <qcom/smb-reg.h>
 #include <qcom/fg-reg.h>
 
-#ifdef UCI_NOTIFICATIONS
+#ifdef CONFIG_UCI_NOTIFICATIONS
 #include <linux/notification/notification.h>
 #endif
 
@@ -1599,7 +1599,7 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 	htc_batt_info.prev.level = htc_batt_info.rep.level;
 	htc_batt_info.prev.level_raw = htc_batt_info.rep.level_raw;
 
-#ifdef UCI_NOTIFICATIONS
+#ifdef CONFIG_UCI_NOTIFICATIONS
 	ntf_set_charge_level(htc_batt_info.rep.level);
 #endif
 
@@ -3146,6 +3146,10 @@ static void batt_worker(struct work_struct *work)
 		g_htc_usb_overheat_check_state,
 		htc_batt_info.state? "OFF" : "ON"
 		);
+
+#ifdef CONFIG_UCI_NOTIFICATIONS
+	ntf_set_charge_level(htc_batt_info.rep.level);
+#endif
 
 	if(gs_update_PSY){
 		gs_update_PSY = false;
