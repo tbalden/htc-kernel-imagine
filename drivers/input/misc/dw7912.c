@@ -1260,9 +1260,19 @@ static void __init dw7912_waveform_async(void *unused, async_cookie_t cookie)
 
 #ifdef CONFIG_UCI
 // TODO
-void set_vibrate(int val) { }
+struct vib_trigger_enabler *g_enabler = NULL;
+
+void set_vibrate(int val) { 
+	if (g_enabler) {
+		dw7912_vib_trigger_enable(g_enabler,val);
+	}
+}
 EXPORT_SYMBOL(set_vibrate);
-void set_vibrate_boosted(int val) { }
+
+void set_vibrate_boosted(int val) {
+	// TODO boost
+	set_vibrate(val);
+}
 EXPORT_SYMBOL(set_vibrate_boosted);
 void set_notification_booster(int value) { }
 EXPORT_SYMBOL(set_notification_booster);
@@ -1334,6 +1344,9 @@ static int dw7912_i2c_probe(struct i2c_client *client,
 	dw7912->enabler.enable = dw7912_vib_trigger_enable;
 	dw7912->enabler.trigger_data = dw7912;
 	vib_trigger_enabler_register(&dw7912->enabler);
+#ifdef CONFIG_UCI
+	g_enabler = &dw7912->enabler;
+#endif
 #endif
 
 	ret = i2c_smbus_read_byte_data(dw7912->dwclient, 0x00);
