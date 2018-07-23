@@ -34,6 +34,11 @@
 #include <asm/uaccess.h>
 #include <linux/async.h>
 
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#include <linux/notification/notification.h>
+#include <linux/uci/uci.h>
+#endif
+
 struct dw7912_priv {
 	struct led_classdev             cdev;
 	struct work_struct              haptics_work;
@@ -103,6 +108,158 @@ int real_time_playback(struct dw7912_priv *p, u8 *data, u32 size);
 #else
 	#define gprintk(x...) do { } while (0)
 #endif
+
+
+#ifdef CONFIG_UCI_NOTIFICATIONS
+//#define VMAX_MV_NOTIFICATION HAP_VMAX_MAX_MV
+
+static bool notification_duration_detected = 0;
+
+static int notification_booster = 2;
+static int notification_booster_overdrive_perc = 70;
+static int vibration_power_set = 0;
+static int vibration_power_percentage = 50;
+//static int vibration_power_overdrive_perc = 140;
+
+static int suspend_booster = 0;
+static int vmax_needs_reset = 1;
+//static int alarm_value_counter = 0;
+//static int last_value = 0;
+//static unsigned long last_alarm_value_jiffies = 0;
+
+int uci_get_notification_booster(void) {
+    return uci_get_user_property_int_mm("notification_booster", notification_booster,0,100);
+}
+int uci_get_notification_booster_overdrive_perc(void) {
+    return uci_get_user_property_int_mm("notification_booster_overdrive_perc", notification_booster_overdrive_perc,70,150);
+}
+
+int uci_get_vibration_power_percentage(void) {
+    return uci_get_user_property_int_mm("vibration_power_percentage", vibration_power_percentage,0,100);
+}
+int uci_get_vibration_sidekeys_percentage(void) {
+    return uci_get_user_property_int_mm("vibration_sidekeys_percentage", 50,20,100);
+}
+int uci_get_vibration_power_set(void) {
+    return uci_get_user_property_int_mm("vibration_power_set", vibration_power_set,0,1);
+}
+
+// register user uci listener
+static int current_power_set = 0;
+static int current_perc_set = 50;
+static int current_sk_perc_set = 50;
+
+struct dw7912_priv *g_p;
+static int original_notif_voltage = 0;
+static int original_sidekeys_voltage = 0;
+
+void haptics_voltage_switch(bool enabled);
+static bool boosted = false;
+#define MAX_VOLTAGE 253
+static void boost_voltage(bool on) {
+	pr_info("%s [VIB] haptics uci boost... %d \n",__func__,on);
+	if (on && !boosted) {
+		boosted = true;
+		g_p->notification_Voltage = (MAX_VOLTAGE) * uci_get_notification_booster_overdrive_perc() / 100;
+		haptics_voltage_switch(true);
+	} else 
+	if (!on && boosted)
+	{
+		boosted = false;
+		g_p->notification_Voltage = current_power_set?(original_notif_voltage * current_perc_set)/25:original_notif_voltage;
+		if (g_p->notification_Voltage > MAX_VOLTAGE) g_p->notification_Voltage = MAX_VOLTAGE;
+		haptics_voltage_switch(true);
+	}
+}
+
+static void uci_user_listener(void) {
+    pr_info("%s haptics uci user parse happened...\n",__func__);
+    vmax_needs_reset = 1;
+    {
+		int set = uci_get_vibration_power_set();
+		int perc = uci_get_vibration_power_percentage();
+		int sk_perc = uci_get_vibration_sidekeys_percentage();
+		if (set!=current_power_set || current_perc_set!=perc || current_sk_perc_set!=sk_perc) {
+			if (g_p) {
+				g_p->notification_Voltage = set?(original_notif_voltage * perc)/25:original_notif_voltage;
+				g_p->sideKeys_Voltage = set?(original_sidekeys_voltage * sk_perc)/25:original_sidekeys_voltage*150/50; // boost original in unset mode as well, it's too low if haptics switch is called otherwise!
+				if (g_p->notification_Voltage > MAX_VOLTAGE) g_p->notification_Voltage = MAX_VOLTAGE;
+				if (g_p->sideKeys_Voltage > MAX_VOLTAGE) g_p->sideKeys_Voltage = MAX_VOLTAGE;
+				pr_info("%s [VIB] set notif voltage %d ...\n",__func__, g_p->notification_Voltage);
+				pr_info("%s [VIB] set sidekeys voltage %d ...\n",__func__, g_p->sideKeys_Voltage);
+				haptics_voltage_switch(true);
+				current_power_set = set;
+				current_perc_set = perc;
+				current_sk_perc_set = sk_perc;
+			}
+		}
+    }
+}
+
+static int boost_only_in_pocket = 1;
+static bool face_down_hr = false;
+static bool proximity = false;
+static bool in_pocket = false;
+
+int uci_get_boost_only_in_pocket(void) {
+    return uci_get_user_property_int_mm("boost_only_in_pocket", boost_only_in_pocket, 0, 1);
+}
+
+// register sys uci listener
+static void uci_sys_listener(void) {
+    // TODO use ntf listener instead
+
+    pr_info("%s [VIB] uci sys parse happened...\n",__func__);
+    proximity = !!uci_get_sys_property_int_mm("proximity", 1,0,1);
+    face_down_hr = !!uci_get_sys_property_int_mm("face_down_hr", 0,0,1);
+    // check if perfectly horizontal facedown is not true, and in proximity 
+    // ...(so it's supposedly not on table, but in pocket) then in_pocket = true
+    in_pocket = !face_down_hr && proximity;
+}
+
+void set_suspend_booster(int value) {
+    suspend_booster = !!value;
+}
+EXPORT_SYMBOL(set_suspend_booster);
+
+void set_notification_booster(int value) {
+    notification_booster = value;
+}
+EXPORT_SYMBOL(set_notification_booster);
+int get_notification_booster(void) {
+    return notification_booster;
+}
+EXPORT_SYMBOL(get_notification_booster);
+void set_notification_boost_only_in_pocket(int value) {
+    boost_only_in_pocket = value;
+}
+EXPORT_SYMBOL(set_notification_boost_only_in_pocket);
+int get_notification_boost_only_in_pocket(void) {
+    return boost_only_in_pocket;
+}
+EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
+
+// TODO call ntf_haptic ##################
+
+static int should_not_boost(void) {
+    int l_boost_only_in_pocket = uci_get_boost_only_in_pocket();
+    if (ntf_is_screen_on() && ntf_wake_by_user()) return 1;
+    if ((l_boost_only_in_pocket && in_pocket) || !l_boost_only_in_pocket) return 0;
+    return 1;
+}
+
+static int smart_get_boost_on(void) {
+    int level = smart_get_notification_level(NOTIF_VIB_BOOSTER);
+    int ret = !suspend_booster && uci_get_notification_booster();
+    if (level != NOTIF_DEFAULT) {
+	ret = 0; // should suspend boosting if not DEFAULT level
+    }
+    pr_info("%s smart_notif =========== level: %d  notif vib should boost %d \n",__func__, level, ret);
+    return ret;
+}
+
+#endif
+
 
 int memory_mode_play_set(struct dw7912_priv *p, int mode)
 {
@@ -554,7 +711,24 @@ static ssize_t dw_haptics_store_duration(struct device *dev, struct device_attri
 		pDW->vibTime = val;
 
 	gprintk("time=%u\n", val);
-
+#ifdef CONFIG_UCI_NOTIFICATIONS
+        pr_info("%s [CLEANSLATE] playtime duration %d\n",__func__,val);
+        if (val >= MIN_TD_VALUE_NOTIFICATION) {
+                notification_duration_detected = 1;
+                if (smart_get_boost_on() && !should_not_boost()) { // raise voltage to boosted value in case of notification durations...
+			boost_voltage(true);
+                }
+        } else {
+                if (notification_duration_detected && smart_get_boost_on() && !should_not_boost()) {
+                        // the vmax config call of this shorter vibration could have been overridden with notification boost maximum, so set it back with stored value...
+                        notification_duration_detected = 0;
+			boost_voltage(false);
+                } else {
+                        notification_duration_detected = 0;
+			boost_voltage(false);
+                }
+        }
+#endif
 	return count;
 }
 
@@ -1097,7 +1271,9 @@ static int dw7912_i2c_parse_dt(struct i2c_client *i2c, struct dw7912_priv *p)
 
 	if (!np)
 		return -1;
-
+#ifdef CONFIG_UCI_NOTIFICATIONS
+	g_p = p;
+#endif
 	p->en = of_get_named_gpio(np, "dw7912,en-gpio", 0);
 	if (p->en < 0) {
 		printk("Looking up %s property in node %s failed %d\n",
@@ -1138,6 +1314,9 @@ static int dw7912_i2c_parse_dt(struct i2c_client *i2c, struct dw7912_priv *p)
 		p->sideKeys_Voltage = 0;
 	} else {
 		gprintk("Read sideKeys Voltage %X from device tree\n", p->sideKeys_Voltage);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		original_sidekeys_voltage = p->sideKeys_Voltage;
+#endif
 	}
 
 	if (of_property_read_u32(np, "dw7912,noti-VL", &p->notification_Voltage) < 0)
@@ -1148,6 +1327,9 @@ static int dw7912_i2c_parse_dt(struct i2c_client *i2c, struct dw7912_priv *p)
 		p->notification_Voltage = 0;
 	} else {
 		gprintk("Read notification Voltage %X from device tree\n", p->notification_Voltage);
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		original_notif_voltage = p->notification_Voltage;
+#endif
 	}
 #endif
 
@@ -1262,28 +1444,33 @@ static void __init dw7912_waveform_async(void *unused, async_cookie_t cookie)
 // TODO
 struct vib_trigger_enabler *g_enabler = NULL;
 
-void set_vibrate(int val) { 
+static int set_val = 0;
+static void set_vibrate_work_func(struct work_struct *set_vibrate_work) {
+    int val = set_val;
+    int power_perc = uci_get_vibration_power_percentage();
+    pr_info("%s [CLEANSLATE] power_perc = %d val = %d\n",__func__,power_perc,val);
+
+    if (power_perc == 0) return;
+    if (val == 0) return;
+    if (g_enabler)
+        dw7912_vib_trigger_enable(g_enabler,val);
+}
+DECLARE_WORK(set_vibrate_work,set_vibrate_work_func);
+
+void set_vibrate(int val)
+{
 	if (g_enabler) {
-		dw7912_vib_trigger_enable(g_enabler,val);
+		set_val = val;
+		schedule_work(&set_vibrate_work);
 	}
 }
 EXPORT_SYMBOL(set_vibrate);
 
 void set_vibrate_boosted(int val) {
-	// TODO boost
+	boost_voltage(true);
 	set_vibrate(val);
 }
 EXPORT_SYMBOL(set_vibrate_boosted);
-void set_notification_booster(int value) { }
-EXPORT_SYMBOL(set_notification_booster);
-int get_notification_booster(void) { return 0; }
-EXPORT_SYMBOL(get_notification_booster);
-void set_notification_boost_only_in_pocket(int value) { }
-EXPORT_SYMBOL(set_notification_boost_only_in_pocket);
-int get_notification_boost_only_in_pocket(void) { return 0; }
-EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
-void set_suspend_booster(int value) { }
-EXPORT_SYMBOL(set_suspend_booster);
 
 #endif
 static int dw7912_i2c_probe(struct i2c_client *client,
@@ -1346,6 +1533,8 @@ static int dw7912_i2c_probe(struct i2c_client *client,
 	vib_trigger_enabler_register(&dw7912->enabler);
 #ifdef CONFIG_UCI
 	g_enabler = &dw7912->enabler;
+	uci_add_user_listener(uci_user_listener);
+	uci_add_sys_listener(uci_sys_listener);
 #endif
 #endif
 
