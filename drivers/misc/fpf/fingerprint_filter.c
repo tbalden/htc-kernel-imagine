@@ -62,6 +62,10 @@ static DEFINE_MUTEX(pwrkeyworklock);
 static DEFINE_MUTEX(fpfuncworklock);
 static struct workqueue_struct *fpf_input_wq;
 static struct work_struct fpf_input_work;
+
+static struct workqueue_struct *fpf_vib_wq;
+static struct workqueue_struct *fpf_pwr_wq;
+
 static int vib_strength = VIB_STRENGTH;
 static int unlock_vib_strength = VIB_STRENGTH;
 
@@ -732,7 +736,8 @@ static DECLARE_WORK(fpf_vib_work, fpf_vib_work_func);
 static void fpf_pwrtrigger(int vibration, const char caller[]) {
 	if (vibration) fpf_vib();
 	pr_info("%s power press - screen_on: %d caller %s\n",__func__, screen_on,caller);
-	schedule_work(&fpf_presspwr_work);
+//	schedule_work(&fpf_presspwr_work);
+	queue_work(fpf_pwr_wq, &fpf_presspwr_work);
         return;
 }
 
@@ -884,9 +889,8 @@ static void fpf_home_button_func_trigger(void) {
 			} else { 
 				powering_down_with_fingerprint_still_pressed = 0; 
 			}
-			fpf_vib();
-			schedule_work(&fpf_vib_work);
-			mdelay(150); // delay a bit, so finger up can trigger input event in goofix driver before screen off suspend...causes issues with fp input events after screen wake otherwise
+			queue_work(fpf_vib_wq, &fpf_vib_work);
+			mdelay(50); // delay a bit, so finger up can trigger input event in goofix driver before screen off suspend...causes issues with fp input events after screen wake otherwise
 			fpf_pwrtrigger(0,__func__);
 			do_home_button_off_too_in_work_func = 0;
 		}
@@ -4004,6 +4008,8 @@ static int __init fpf_init(void)
 	// fpf handler
 	kcal_listener_wq = alloc_workqueue("kcal_list", WQ_HIGHPRI, 1);
 	fpf_input_wq = alloc_workqueue("fpf_iwq", WQ_HIGHPRI, 1);;
+	fpf_pwr_wq = alloc_workqueue("fpf_pwq", WQ_HIGHPRI, 1);;
+	fpf_vib_wq = alloc_workqueue("fpf_vwq", WQ_HIGHPRI, 1);;
 	if (!fpf_input_wq) {
 		pr_err("%s: Failed to create workqueue\n", __func__);
 		return -EFAULT;
@@ -4236,6 +4242,9 @@ static void __exit fpf_exit(void)
 	kobject_del(fpf_kobj);
 	input_unregister_handler(&fpf_input_handler);
 	destroy_workqueue(fpf_input_wq);
+	destroy_workqueue(fpf_pwr_wq);
+	destroy_workqueue(fpf_vib_wq);
+	destroy_workqueue(kcal_listener_wq);
 	input_unregister_device(fpf_pwrdev);
 	input_free_device(fpf_pwrdev);
 
