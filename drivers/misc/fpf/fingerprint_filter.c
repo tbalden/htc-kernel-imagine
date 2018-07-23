@@ -235,6 +235,7 @@ void stop_kernel_ambient_display(bool interrupt_ongoing);
 
 int stored_lock_state = 0;
 // register sys uci listener
+// TODO move this to ntf event handling, together with new silent / face down event...
 static int last_face_down = 0;
 void fpf_uci_sys_listener(void) {
 	int locked = 0;
@@ -3902,46 +3903,22 @@ static DEVICE_ATTR(smart_hibernate_inactive_minutes, (S_IWUSR|S_IRUGO),
 static struct kobject *fpf_kobj;
 
 
+#ifdef CONFIG_UCI_NOTIFICATIONS
+bool charging = true;
+static void ntf_listener(char* event, int num_param, char* str_param) {
+        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+                pr_info("%s fpf ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
+        }
 
-
-#if defined(CONFIG_FB)
-static int fb_notifier_callback(struct notifier_block *self,
-                                 unsigned long event, void *data)
-{
-    struct fb_event *evdata = data;
-    int *blank;
-    pr_info("fpf %s\n",__func__);
-
-    // catch early events as well, as this helps a lot correct functioning knowing when screen is almost off/on, preventing many problems 
-    // interpreting still screen ON while it's almost off and vica versa
-    if (evdata && evdata->data && event == FB_EARLY_EVENT_BLANK && fpf_pwrdev) {
-        blank = evdata->data;
-        switch (*blank) {
-        case FB_BLANK_UNBLANK:
+	if (!strcmp(event,NTF_EVENT_WAKE_EARLY)) {
 		screen_on = 1;
 		screen_off_early = 0;
 		last_screen_on_seconds = get_global_seconds();
 		last_screen_on_early_time = jiffies;
 		pr_info("fpf kad screen on -early\n");
-            break;
+	} else
 
-        case FB_BLANK_POWERDOWN:
-        case FB_BLANK_HSYNC_SUSPEND:
-        case FB_BLANK_VSYNC_SUSPEND:
-        case FB_BLANK_NORMAL:
-		screen_on = 0;
-		screen_off_early = 1;
-		//screen_on_full = 0;
-		last_kad_screen_off_time = jiffies;
-		pr_info("fpf kad screen off -early\n");
-            break;
-        }
-    }
-    if (evdata && evdata->data && event == FB_EVENT_BLANK && fpf_pwrdev) {
-        blank = evdata->data;
-        switch (*blank) {
-        case FB_BLANK_UNBLANK:
-		{
+	if (!strcmp(event,NTF_EVENT_WAKE_BY_USER) || !strcmp(event,NTF_EVENT_WAKE_BY_FRAMEWORK)) {
 		screen_on = 1;
 		screen_on_full = 1;
 		last_screen_event_timestamp = jiffies;
@@ -3949,13 +3926,17 @@ static int fb_notifier_callback(struct notifier_block *self,
 		kcal_sleep_before_restore = true;
 		schedule_work(&kcal_restore_work);
 		pr_info("fpf screen on\n");
-		}
-            break;
+	} else
 
-        case FB_BLANK_POWERDOWN:
-        case FB_BLANK_HSYNC_SUSPEND:
-        case FB_BLANK_VSYNC_SUSPEND:
-        case FB_BLANK_NORMAL:
+	if (!strcmp(event,NTF_EVENT_SLEEP_EARLY)) {
+		screen_on = 0;
+		screen_off_early = 1;
+		//screen_on_full = 0;
+		last_kad_screen_off_time = jiffies;
+		pr_info("fpf kad screen off -early\n");
+	} else
+
+	if (!strcmp(event,NTF_EVENT_SLEEP)) {
 		screen_on = 0;
 		screen_on_full = 0;
 		last_kad_screen_off_time = jiffies;
@@ -3964,81 +3945,31 @@ static int fb_notifier_callback(struct notifier_block *self,
 		last_screen_lock_check_was_false = 0;
 		last_scroll_emulate_timestamp = 0;
 		pr_info("fpf kad screen off\n");
-            break;
-        }
-    }
-    return 0;
-}
-#elif defined(CONFIG_MSM_RDM_NOTIFY)
-static int fpf_fb_state_chg_callback(
-    struct notifier_block *nb, unsigned long val, void *data)
-{
-    struct msm_drm_notifier *evdata = data;
-    unsigned int blank;
+	} else
 
-    if (val != MSM_DRM_EARLY_EVENT_BLANK && val != MSM_DRM_EVENT_BLANK)
-	return 0;
-
-    if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
-        return 0;
-
-    pr_info("[info] %s go to the msm_drm_notifier_callback value = %d\n",
-	    __func__, (int)val);
-
-    if (evdata && evdata->data && val ==
-	MSM_DRM_EARLY_EVENT_BLANK && fpf_pwrdev) {
-	blank = *(int *)(evdata->data);
-	switch (blank) {
-	case MSM_DRM_BLANK_POWERDOWN:
-		screen_on = 0;
-		screen_off_early = 1;
-		//screen_on_full = 0;
-		last_kad_screen_off_time = jiffies;
-		pr_info("fpf kad screen off -early\n");
-	    break;
-	case MSM_DRM_BLANK_UNBLANK:
-		screen_on = 1;
-		screen_off_early = 0;
-		last_screen_on_seconds = get_global_seconds();
-		last_screen_on_early_time = jiffies;
-		pr_info("fpf kad screen on -early\n");
-	    break;
-	default:
-	    pr_info("%s defalut\n", __func__);
-	    break;
-	}
-    }
-    if (evdata && evdata->data && val ==
-	MSM_DRM_EVENT_BLANK && fpf_pwrdev) {
-	blank = *(int *)(evdata->data);
-	switch (blank) {
-	case MSM_DRM_BLANK_POWERDOWN:
-		screen_on = 0;
-		screen_on_full = 0;
-		last_kad_screen_off_time = jiffies;
-		last_screen_event_timestamp = jiffies;
-		last_screen_off_seconds = get_global_seconds();
-		last_screen_lock_check_was_false = 0;
-		last_scroll_emulate_timestamp = 0;
-		pr_info("fpf kad screen off\n");
-	    break;
-	case MSM_DRM_BLANK_UNBLANK:
-		{
-		screen_on = 1;
-		screen_on_full = 1;
-		last_screen_event_timestamp = jiffies;
-		pr_info("%s kad screen on\n",__func__);
-		kcal_sleep_before_restore = true;
-		schedule_work(&kcal_restore_work);
-		pr_info("fpf screen on\n");
+	if (!strcmp(event,NTF_EVENT_RINGING)) {
+//		stop_kernel_ambient_display(true); // TODO move to fpf
+	} else
+	if (!strcmp(event,NTF_EVENT_NOTIFICATION)) {
+		if (!!num_param) {
 		}
-	    break;
-	default:
-	    pr_info("%s defalut\n", __func__);
-	    break;
-	}
-    }
-    return NOTIFY_OK;
+	} else
+        if (!strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+        } else
+        if (!strcmp(event,NTF_EVENT_INPUT)) {
+        } else
+        if (!strcmp(event,NTF_EVENT_CHARGE_STATE)) {
+		bool input_event = false;
+		if (!!num_param != charging) {
+			input_event = true;
+		}
+                charging = !!num_param;
+		if (!charging) {
+		}
+		if (input_event) {
+//			stop_kernel_ambient_display(true);
+		}
+        }
 }
 #endif
 
@@ -4046,7 +3977,6 @@ static int fpf_fb_state_chg_callback(
 static int __init fpf_init(void)
 {
 	int rc = 0;
-	int status = 0;
 	pr_info("fpf - init\n");
 
 	fpf_pwrdev = input_allocate_device();
@@ -4099,17 +4029,6 @@ static int __init fpf_init(void)
 		pr_err("%s: Failed to register ts_input_handler\n", __func__);
 
 
-#if defined(CONFIG_FB)
-	fb_notifier = kzalloc(sizeof(struct notifier_block), GFP_KERNEL);;
-	fb_notifier->notifier_call = fb_notifier_callback;
-	fb_register_client(fb_notifier);
-#elif defined(CONFIG_MSM_RDM_NOTIFY)
-	msm_drm_notif = kzalloc(sizeof(struct notifier_block), GFP_KERNEL);;
-	msm_drm_notif->notifier_call = fpf_fb_state_chg_callback;
-	status = msm_drm_register_client(msm_drm_notif);
-	if (status)
-		pr_err("Unable to register msm_drm_notifier: %d\n", status);
-#endif
 
 
 	fpf_kobj = kobject_create_and_add("fpf", NULL) ;
@@ -4297,7 +4216,10 @@ static int __init fpf_init(void)
 		vibrate_rtc_callback);
 	alarm_init(&triple_tap_rtc, ALARM_REALTIME,
 		triple_tap_rtc_callback);
+
 	uci_add_sys_listener(fpf_uci_sys_listener);
+	ntf_add_listener(ntf_listener);
+
 	init_done = 1;
 	smart_last_user_activity_time = get_global_seconds();
 err_input_dev:
