@@ -232,6 +232,10 @@
 #define RESOL_SHIFT_BITS (10)
 #define FREQ_MASK 0x7F
 
+#if 1
+extern int is_real_ts_input_filtered(void);
+#endif
+
 extern char *htc_get_bootmode(void);
 
 static DECLARE_WAIT_QUEUE_HEAD(syn_data_ready_wq);
@@ -2665,6 +2669,9 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	struct synaptics_rmi4_f11_data_1_5 data;
 	struct synaptics_rmi4_f11_extra_data *extra_data;
 
+#if 1
+	bool is_real_ts_input_off = is_real_ts_input_filtered();
+#endif
 	/*
 	 * The number of finger status registers is determined by the
 	 * maximum number of fingers supported - 2 bits per finger. So
@@ -2719,9 +2726,15 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		 * 11 = reserved
 		 */
 #ifdef TYPE_B_PROTOCOL
+#if 1
+		if (!is_real_ts_input_off) {
+#endif
 		input_mt_slot(rmi4_data->input_dev, finger);
 		input_mt_report_slot_state(rmi4_data->input_dev,
 				MT_TOOL_FINGER, finger_status);
+#if 1
+		}
+#endif
 #endif
 
 		if (finger_status) {
@@ -2755,7 +2768,9 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 				x = rmi4_data->sensor_max_x - x;
 			if (rmi4_data->hw_if->board_data->y_flip)
 				y = rmi4_data->sensor_max_y - y;
-
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_report_key(rmi4_data->input_dev,
 					BTN_TOUCH, 1);
 			input_report_key(rmi4_data->input_dev,
@@ -2773,7 +2788,9 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #ifndef TYPE_B_PROTOCOL
 			input_mt_sync(rmi4_data->input_dev);
 #endif
-
+#if 1
+			}
+#endif
 			dev_dbg(rmi4_data->pdev->dev.parent,
 					"%s: Finger %d: status = 0x%02x, x = %d, y = %d, wx = %d, wy = %d\n",
 					__func__, finger,
@@ -2784,6 +2801,9 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		}
 	}
 
+#if 1
+	if (!is_real_ts_input_off) {
+#endif
 	if (touch_count == 0) {
 		input_report_key(rmi4_data->input_dev,
 				BTN_TOUCH, 0);
@@ -2795,7 +2815,9 @@ static int synaptics_rmi4_f11_abs_report(struct synaptics_rmi4_data *rmi4_data,
 	}
 
 	input_sync(rmi4_data->input_dev);
-
+#if 1
+	}
+#endif
 exit:
 	mutex_unlock(&(rmi4_data->rmi4_report_mutex));
 
@@ -2839,6 +2861,11 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #ifdef F12_DATA_15_WORKAROUND
 	static unsigned char objects_already_present;
 #endif
+
+#if 1
+	bool is_real_ts_input_off = is_real_ts_input_filtered();
+#endif
+
 #ifdef HTC_FEATURE
 	bool touch_detect = false;
 	const struct synaptics_dsx_board_data *bdata =
@@ -2992,6 +3019,9 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			/* Stylus has priority over fingers */
 			if (stylus_presence)
 				break;
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 #ifdef TYPE_B_PROTOCOL
 			input_mt_slot(rmi4_data->input_dev, finger);
 			input_mt_report_slot_state(rmi4_data->input_dev,
@@ -3021,6 +3051,9 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 						min(wx, wy));
 			}
 #endif
+#if 1
+			}
+#endif
 #ifdef REPORT_2D_PRESSURE
 			if (rmi4_data->report_pressure) {
 				f_fingers = extra_data->data29_size / 2;
@@ -3036,8 +3069,14 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 				pressure = pressure > 0 ? pressure : 1;
 				if (pressure > rmi4_data->force_max)
 					pressure = rmi4_data->force_max;
+#if 1
+				if (!is_real_ts_input_off) {
+#endif
 				input_report_abs(rmi4_data->input_dev,
 						ABS_MT_PRESSURE, pressure);
+#if 1
+				}
+#endif
 			}
 #elif defined(F51_DISCRETE_FORCE)
 			if (finger == 0) {
@@ -3051,11 +3090,23 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			} else {
 				pressure = 1;
 			}
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_report_abs(rmi4_data->input_dev,
 					ABS_MT_PRESSURE, pressure);
+#if 1
+			}
+#endif
 #endif
 #ifndef TYPE_B_PROTOCOL
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_mt_sync(rmi4_data->input_dev);
+#if 1
+			}
+#endif
 #endif
 
 #ifdef HTC_FEATURE
@@ -3142,6 +3193,9 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 				if (finger + 1 != stylus_presence)
 					break;
 			}
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_report_key(rmi4_data->stylus_dev,
 					BTN_TOUCH, 1);
 			if (finger_status == F12_STYLUS_STATUS) {
@@ -3156,15 +3210,23 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 			input_report_abs(rmi4_data->stylus_dev,
 					ABS_Y, y);
 			input_sync(rmi4_data->stylus_dev);
-
+#if 1
+			}
+#endif
 			stylus_presence = finger + 1;
 			touch_count++;
 			break;
 		default:
 #ifdef TYPE_B_PROTOCOL
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_mt_slot(rmi4_data->input_dev, finger);
 			input_mt_report_slot_state(rmi4_data->input_dev,
 					MT_TOOL_FINGER, 0);
+#if 1
+			}
+#endif
 #endif
 
 #ifdef HTC_FEATURE
@@ -3188,6 +3250,9 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #ifdef F12_DATA_15_WORKAROUND
 		objects_already_present = 0;
 #endif
+#if 1
+		if (!is_real_ts_input_off) {
+#endif
 		input_report_key(rmi4_data->input_dev,
 				BTN_TOUCH, 0);
 		input_report_key(rmi4_data->input_dev,
@@ -3195,9 +3260,15 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #ifndef TYPE_B_PROTOCOL
 		input_mt_sync(rmi4_data->input_dev);
 #endif
+#if 1
+		}
+#endif
 
 		if (rmi4_data->stylus_enable) {
 			stylus_presence = 0;
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_report_key(rmi4_data->stylus_dev,
 					BTN_TOUCH, 0);
 			input_report_key(rmi4_data->stylus_dev,
@@ -3207,6 +3278,9 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 						BTN_TOOL_RUBBER, 0);
 			}
 			input_sync(rmi4_data->stylus_dev);
+#if 1
+			}
+#endif
 		}
 
 #ifdef HTC_FEATURE
@@ -3228,7 +3302,13 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 #endif
 	}
 
+#if 1
+	if (!is_real_ts_input_off) {
+#endif
 	input_sync(rmi4_data->input_dev);
+#if 1
+	}
+#endif
 
 #ifdef HTC_FEATURE
 	if (bdata->support_eg_blk && rmi4_data->touch_detect != touch_detect) {
@@ -3342,6 +3422,10 @@ static void synaptics_rmi4_f1a_report(struct synaptics_rmi4_data *rmi4_data,
 	static bool while_2d_status[MAX_NUMBER_OF_BUTTONS];
 #endif
 
+#if 1
+	bool is_real_ts_input_off = is_real_ts_input_filtered();
+#endif
+
 	if (do_once) {
 		memset(current_status, 0, sizeof(current_status));
 #ifdef NO_0D_WHILE_2D
@@ -3394,16 +3478,28 @@ static void synaptics_rmi4_f1a_report(struct synaptics_rmi4_data *rmi4_data,
 				}
 			}
 			touch_count++;
+#if 1
+			if (!is_real_ts_input_off) {
+#endif
 			input_report_key(rmi4_data->input_dev,
 					f1a->button_map[button],
 					status);
+#if 1
+			}
+#endif
 		} else {
 			if (before_2d_status[button] == 1) {
 				before_2d_status[button] = 0;
 				touch_count++;
+#if 1
+				if (!is_real_ts_input_off) {
+#endif
 				input_report_key(rmi4_data->input_dev,
 						f1a->button_map[button],
 						status);
+#if 1
+				}
+#endif
 			} else {
 				if (status == 1)
 					while_2d_status[button] = 1;
@@ -3413,15 +3509,26 @@ static void synaptics_rmi4_f1a_report(struct synaptics_rmi4_data *rmi4_data,
 		}
 #else
 		touch_count++;
+#if 1
+		if (!is_real_ts_input_off) {
+#endif
 		input_report_key(rmi4_data->input_dev,
 				f1a->button_map[button],
 				status);
+#if 1
+		}
+#endif
 #endif
 	}
 
+#if 1
+	if (!is_real_ts_input_off) {
+#endif
 	if (touch_count)
 		input_sync(rmi4_data->input_dev);
-
+#if 1
+	}
+#endif
 	mutex_unlock(&(rmi4_data->rmi4_report_mutex));
 
 	return;
