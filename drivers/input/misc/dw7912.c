@@ -111,15 +111,13 @@ int real_time_playback(struct dw7912_priv *p, u8 *data, u32 size);
 
 
 #ifdef CONFIG_UCI_NOTIFICATIONS
-//#define VMAX_MV_NOTIFICATION HAP_VMAX_MAX_MV
 
 static bool notification_duration_detected = 0;
 
-static int notification_booster = 2;
+static int notification_booster = 0;
 static int notification_booster_overdrive_perc = 70;
 static int vibration_power_set = 0;
 static int vibration_power_percentage = 50;
-//static int vibration_power_overdrive_perc = 140;
 
 static int suspend_booster = 0;
 static int vmax_needs_reset = 1;
@@ -757,6 +755,9 @@ static ssize_t dw_haptics_store_activate(struct device *dev, struct device_attri
 
 	mutex_lock(&pDW->play_lock);
 	if (val && (pDW->vibTime > 0)) {
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		ntf_vibration(pDW->vibTime);
+#endif
 		atomic_set(&pDW->state, 1);
 	} else {
 		atomic_set(&pDW->state, 0);
@@ -1259,6 +1260,27 @@ static void dw7912_vib_trigger_enable(struct vib_trigger_enabler *enabler, int v
 	schedule_work(&pDW->haptics_work);
 
 }
+#ifdef CONFIG_UCI
+static void dw7912_vib_trigger_reset_enable(struct vib_trigger_enabler *enabler, int value)
+{
+	struct dw7912_priv *pDW = Gdw7912;
+	pDW->vibTime = value;
+	gprintk("trg=%d\r\n", value);
+
+	hrtimer_cancel(&pDW->stop_timer);
+	cancel_work_sync(&pDW->haptics_work);
+
+	mutex_lock(&pDW->play_lock);
+	if (value && (pDW->vibTime > 0)) {
+		atomic_set(&pDW->state, 1);
+	} else {
+		atomic_set(&pDW->state, 0);
+		pDW->vibTime = 0;
+	}
+	schedule_work(&pDW->haptics_work);
+	mutex_unlock(&pDW->play_lock);
+}
+#endif
 #endif
 
 #ifdef CONFIG_OF
@@ -1453,7 +1475,7 @@ static void set_vibrate_work_func(struct work_struct *set_vibrate_work) {
     if (power_perc == 0) return;
     if (val == 0) return;
     if (g_enabler)
-        dw7912_vib_trigger_enable(g_enabler,val);
+        dw7912_vib_trigger_reset_enable(g_enabler,val);
 }
 DECLARE_WORK(set_vibrate_work,set_vibrate_work_func);
 
@@ -1467,7 +1489,9 @@ void set_vibrate(int val)
 EXPORT_SYMBOL(set_vibrate);
 
 void set_vibrate_boosted(int val) {
-	boost_voltage(true);
+        if (smart_get_boost_on() && !should_not_boost()) { // raise voltage to boosted value in case of notification durations...
+		boost_voltage(true);
+        }
 	set_vibrate(val);
 }
 EXPORT_SYMBOL(set_vibrate_boosted);
