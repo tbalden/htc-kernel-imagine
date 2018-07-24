@@ -715,7 +715,9 @@ static ssize_t dw_haptics_store_duration(struct device *dev, struct device_attri
                 notification_duration_detected = 1;
                 if (smart_get_boost_on() && !should_not_boost()) { // raise voltage to boosted value in case of notification durations...
 			boost_voltage(true);
-                }
+                } else {
+			boost_voltage(false);
+		}
         } else {
                 if (notification_duration_detected && smart_get_boost_on() && !should_not_boost()) {
                         // the vmax config call of this shorter vibration could have been overridden with notification boost maximum, so set it back with stored value...
