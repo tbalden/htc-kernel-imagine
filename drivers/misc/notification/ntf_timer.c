@@ -334,7 +334,7 @@ static int uci_get_vib_notification_slowness(void) {
 	return uci_get_user_property_int_mm("vib_notification_slowness", vib_notification_slowness, 0, 30);
 }
 static int uci_get_vib_notification_length(void) {
-	return uci_get_user_property_int_mm("vib_notification_length", vib_notification_length, 0, 499);
+	return uci_get_user_property_int_mm("vib_notification_length", vib_notification_length, 0, 500);
 }
 
 void set_vib_notification_reminder(int value) {

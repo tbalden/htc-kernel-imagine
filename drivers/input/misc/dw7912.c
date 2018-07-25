@@ -152,22 +152,26 @@ static int original_notif_voltage = 0;
 static int original_sidekeys_voltage = 0;
 
 void haptics_voltage_switch(bool enabled);
-static bool boosted = false;
+
 #define MAX_VOLTAGE 253
+
+static DEFINE_MUTEX(boost_lock);
+
 static void boost_voltage(bool on) {
+	static bool boosted = false;
 	pr_info("%s [VIB] haptics uci boost... %d \n",__func__,on);
+	mutex_lock(&boost_lock);
 	if (on && !boosted) {
 		boosted = true;
 		g_p->notification_Voltage = (MAX_VOLTAGE) * uci_get_notification_booster_overdrive_perc() / 100;
 		haptics_voltage_switch(true);
-	} else 
-	if (!on && boosted)
-	{
+	} else if (!on && boosted) {
 		boosted = false;
 		g_p->notification_Voltage = current_power_set?(original_notif_voltage * current_perc_set)/25:original_notif_voltage;
 		if (g_p->notification_Voltage > MAX_VOLTAGE) g_p->notification_Voltage = MAX_VOLTAGE;
 		haptics_voltage_switch(true);
 	}
+	mutex_unlock(&boost_lock);
 }
 
 static void uci_user_listener(void) {
@@ -404,7 +408,33 @@ i2c_transfer_fail:
 	return rc;
 }
 
- static void dw7912_haptics_work(struct work_struct *work)
+#if 1
+static void dw7912_haptics_off_work(struct work_struct *haptics_off_work)
+{
+	struct dw7912_priv *pDW = Gdw7912;
+	mutex_lock(&pDW->play_lock);
+	{
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x0);
+		gprintk("off work - %s\n", "off");
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x0c, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x0d, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x0e, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x0f, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x10, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x11, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x12, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x13, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x14, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x15, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x16, 0x0);
+		i2c_smbus_write_byte_data(pDW->dwclient, 0x17, 0x0);
+	}
+	mutex_unlock(&pDW->play_lock);
+}
+DECLARE_WORK(haptics_off_work,dw7912_haptics_off_work);
+#endif
+
+static void dw7912_haptics_work(struct work_struct *work)
 {
 	struct dw7912_priv *pDW = Gdw7912;
 	bool enable;
@@ -483,6 +513,10 @@ i2c_transfer_fail:
 	}
 	mutex_unlock(&pDW->play_lock);
 }
+#ifdef CONFIG_UCI_NOTIFICATIONS
+static bool vibrator_trigger_count = 0;
+
+#endif
 
 static enum hrtimer_restart hap_stop_timer(struct hrtimer *timer)
 {
@@ -492,6 +526,12 @@ static enum hrtimer_restart hap_stop_timer(struct hrtimer *timer)
 		atomic_set(&pDW->state, 0);
 		schedule_work(&pDW->haptics_work);
 	} else {
+#if 1
+		if (vibrator_trigger_count-->0) {
+			atomic_set(&pDW->state, 0);
+			schedule_work(&haptics_off_work);
+		} else
+#endif
 		gprintk("Vibrator already stop\n");
 	}
 
@@ -1275,6 +1315,7 @@ static void dw7912_vib_trigger_reset_enable(struct vib_trigger_enabler *enabler,
 	mutex_lock(&pDW->play_lock);
 	if (value && (pDW->vibTime > 0)) {
 		atomic_set(&pDW->state, 1);
+		vibrator_trigger_count = 3; // set count to 3, so in stop work even if enable seems 0, it will start off work...
 	} else {
 		atomic_set(&pDW->state, 0);
 		pDW->vibTime = 0;
@@ -1476,8 +1517,10 @@ static void set_vibrate_work_func(struct work_struct *set_vibrate_work) {
 
     if (power_perc == 0) return;
     if (val == 0) return;
-    if (g_enabler)
+    if (g_enabler) {
+
         dw7912_vib_trigger_reset_enable(g_enabler,val);
+    }
 }
 DECLARE_WORK(set_vibrate_work,set_vibrate_work_func);
 
