@@ -37,6 +37,7 @@
 #ifdef CONFIG_UCI_NOTIFICATIONS
 #include <linux/notification/notification.h>
 #include <linux/uci/uci.h>
+#include <linux/alarmtimer.h>
 #endif
 
 struct dw7912_priv {
@@ -157,15 +158,16 @@ void haptics_voltage_switch(bool enabled);
 
 static DEFINE_MUTEX(boost_lock);
 
+static bool boost_reset = true;
 static void boost_voltage(bool on) {
 	static bool boosted = false;
 	pr_info("%s [VIB] haptics uci boost... %d \n",__func__,on);
 	mutex_lock(&boost_lock);
-	if (on && !boosted) {
+	if ((on && !boosted)||boost_reset) {
 		boosted = true;
 		g_p->notification_Voltage = (MAX_VOLTAGE) * uci_get_notification_booster_overdrive_perc() / 100;
 		haptics_voltage_switch(true);
-	} else if (!on && boosted) {
+	} else if ((!on && boosted)||boost_reset) {
 		boosted = false;
 		g_p->notification_Voltage = current_power_set?(original_notif_voltage * current_perc_set)/25:original_notif_voltage;
 		if (g_p->notification_Voltage > MAX_VOLTAGE) g_p->notification_Voltage = MAX_VOLTAGE;
@@ -415,7 +417,7 @@ static void dw7912_haptics_off_work(struct work_struct *haptics_off_work)
 	mutex_lock(&pDW->play_lock);
 	{
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x0);
-		gprintk("off work - %s\n", "off");
+		gprintk("%s off work - %s\n", __func__, "off");
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x0c, 0x0);
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x0d, 0x0);
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x0e, 0x0);
@@ -442,6 +444,7 @@ static void dw7912_haptics_work(struct work_struct *work)
 	mutex_lock(&pDW->play_lock);
 
 	enable = atomic_read(&pDW->state);
+	pr_info("%s [VIB] atomic read %d...\n",__func__, enable);
 
 	if (enable) {
 		if (pDW->vibTime == 100000) {
@@ -493,6 +496,7 @@ static void dw7912_haptics_work(struct work_struct *work)
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x14, 0x0F);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x01);
 			gprintk("%s\n", "on");
+			pr_info("%s [VIB] vibtime %d...\n",__func__, pDW->vibTime);
 			hrtimer_start(&pDW->stop_timer, ktime_set(pDW->vibTime / MSEC_PER_SEC, (pDW->vibTime % MSEC_PER_SEC) * NSEC_PER_MSEC), HRTIMER_MODE_REL);
 		}
 	} else {
@@ -523,11 +527,14 @@ static enum hrtimer_restart hap_stop_timer(struct hrtimer *timer)
 	struct dw7912_priv *pDW = Gdw7912;
 
 	if (atomic_read(&pDW->state)) {
+		pr_info("%s [VIB] atomic read 1, atomic set 0...\n",__func__);
 		atomic_set(&pDW->state, 0);
 		schedule_work(&pDW->haptics_work);
 	} else {
 #if 1
+		pr_info("%s [VIB] atomic read 0...\n",__func__);
 		if (vibrator_trigger_count-->0) {
+			pr_info("%s [VIB] atomic set 0...\n",__func__);
 			atomic_set(&pDW->state, 0);
 			schedule_work(&haptics_off_work);
 		} else
@@ -653,11 +660,13 @@ static ssize_t dw_haptics_store_enable(struct device *dev, struct device_attribu
 	} else if (buf[0] == '7') {
 		gprintk(" Set infinite mode with timer, time %u\n", pDW->vibTime);
 		if (pDW->vibTime > 0) {
+			pr_info("%s [VIB] cancel stop timer #1...\n",__func__);
 			hrtimer_cancel(&pDW->stop_timer);
 			cancel_work_sync(&pDW->haptics_work);
 			atomic_set(&pDW->state, 1);
 			schedule_work(&pDW->haptics_work);
 		} else {
+			pr_info("%s [VIB] cancel stop timer #2...\n",__func__);
 			hrtimer_cancel(&pDW->stop_timer);
 			cancel_work_sync(&pDW->haptics_work);
 		}
@@ -792,6 +801,7 @@ static ssize_t dw_haptics_store_activate(struct device *dev, struct device_attri
 	}
 	gprintk("%s\n", val ?"enable" :"disable");
 
+	pr_info("%s [VIB] cancel stop timer...\n",__func__);
 	hrtimer_cancel(&pDW->stop_timer);
 	cancel_work_sync(&pDW->haptics_work);
 
@@ -800,8 +810,10 @@ static ssize_t dw_haptics_store_activate(struct device *dev, struct device_attri
 #ifdef CONFIG_UCI_NOTIFICATIONS
 		ntf_vibration(pDW->vibTime);
 #endif
+		pr_info("%s [VIB] atomic set 1...\n",__func__);
 		atomic_set(&pDW->state, 1);
 	} else {
+		pr_info("%s [VIB] atomic set 0...\n",__func__);
 		atomic_set(&pDW->state, 0);
 		pDW->vibTime = 0;
 	}
@@ -907,6 +919,7 @@ static ssize_t dw_haptics_store_calibration(struct device *dev, struct device_at
 		return rc;
 
 	if (val >= 140 && val <= 160) {
+		pr_info("%s [VIB] cancel stop timer...\n",__func__);
 		hrtimer_cancel(&pDW->stop_timer);
 		cancel_work_sync(&pDW->haptics_work);
 
@@ -1248,6 +1261,9 @@ void haptics_voltage_switch(bool enabled) {
 	u8 *cpy_header = NULL;
 
 	if (enabled == false) {
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		boost_reset = true;
+#endif
 		gprintk("VS: original %x %x\n", mem_header1[7], mem_cali_header6[pDW->defaultFreq - 140][7]);
 		if (memory_mode_play(pDW, mem_header1, mem_wave1, sizeof(mem_wave1)) < 0) {
 			gprintk("Waveform setting fail\n");
@@ -1258,6 +1274,9 @@ void haptics_voltage_switch(bool enabled) {
 			waveform_freq_set(pDW, pDW->calFreq);
 		}
 	} else if (enabled == true) {
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		boost_reset = false;
+#endif
 		gprintk("VS: %x %x\n", pDW->sideKeys_Voltage, pDW->notification_Voltage);
 		cpy_header = kzalloc(sizeof(u8) * 8, GFP_KERNEL);
 		memcpy(cpy_header, mem_header1, 8);
@@ -1294,8 +1313,10 @@ static void dw7912_vib_trigger_enable(struct vib_trigger_enabler *enabler, int v
 	gprintk("trg=%d\r\n", value);
 
 	if (value && (pDW->vibTime > 0)) {
+		pr_info("%s [VIB] atomic set 1...\n",__func__);
 		atomic_set(&pDW->state, 1);
 	} else {
+		pr_info("%s [VIB] atomic set 0...\n",__func__);
 		atomic_set(&pDW->state, 0);
 		pDW->vibTime = 0;
 	}
@@ -1303,25 +1324,55 @@ static void dw7912_vib_trigger_enable(struct vib_trigger_enabler *enabler, int v
 
 }
 #ifdef CONFIG_UCI
+static struct alarm vibstop_rtc;
+static enum alarmtimer_restart vibstop_rtc_callback(struct alarm *al, ktime_t now)
+{
+	struct dw7912_priv *pDW = Gdw7912;
+
+	pr_info("%s [VIB] cancel stop timer...\n",__func__);
+	hrtimer_cancel(&pDW->stop_timer);
+	cancel_work_sync(&pDW->haptics_work);
+
+	pr_info("%s [VIB] atomic set 0...\n",__func__);
+	atomic_set(&pDW->state, 0);
+	pDW->vibTime = 0;
+
+	schedule_work(&pDW->haptics_work);
+
+        return ALARMTIMER_NORESTART;
+}
+
+
 static void dw7912_vib_trigger_reset_enable(struct vib_trigger_enabler *enabler, int value)
 {
 	struct dw7912_priv *pDW = Gdw7912;
 	pDW->vibTime = value;
 	gprintk("trg=%d\r\n", value);
 
+	pr_info("%s [VIB] cancel stop timer...\n",__func__);
 	hrtimer_cancel(&pDW->stop_timer);
 	cancel_work_sync(&pDW->haptics_work);
 
 	mutex_lock(&pDW->play_lock);
 	if (value && (pDW->vibTime > 0)) {
+		pr_info("%s [VIB] atomic set 1...\n",__func__);
 		atomic_set(&pDW->state, 1);
 		vibrator_trigger_count = 3; // set count to 3, so in stop work even if enable seems 0, it will start off work...
 	} else {
+		pr_info("%s [VIB] atomic set 0...\n",__func__);
 		atomic_set(&pDW->state, 0);
 		pDW->vibTime = 0;
 	}
 	schedule_work(&pDW->haptics_work);
 	mutex_unlock(&pDW->play_lock);
+	{
+/*                ktime_t wakeup_time;
+                ktime_t curr_time = { .tv64 = 0 };
+                wakeup_time = ktime_add_us(curr_time,
+                        (sleeptime * 1000LL)); // msec to usec*/
+                alarm_cancel(&vibstop_rtc); // stop pending alarm...
+                alarm_start_relative(&vibstop_rtc, ktime_set((pDW->vibTime-5) / MSEC_PER_SEC, ((pDW->vibTime-5) % MSEC_PER_SEC) * NSEC_PER_MSEC)); // start new...
+	}
 }
 #endif
 #endif
@@ -1604,6 +1655,8 @@ static int dw7912_i2c_probe(struct i2c_client *client,
 	g_enabler = &dw7912->enabler;
 	uci_add_user_listener(uci_user_listener);
 	uci_add_sys_listener(uci_sys_listener);
+        alarm_init(&vibstop_rtc, ALARM_REALTIME,
+            vibstop_rtc_callback);
 #endif
 #endif
 
