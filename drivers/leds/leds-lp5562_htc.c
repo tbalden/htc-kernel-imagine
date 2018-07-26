@@ -239,6 +239,7 @@ static struct mutex	enable_mutex;
 static struct workqueue_struct *g_led_work_queue;
 static struct workqueue_struct *g_vk_work_queue;
 static struct workqueue_struct *g_vib_work_queue;
+
 static uint32_t ModeRGB;
 static int VK_brightness;
 static int last_pwm;
@@ -3002,7 +3003,7 @@ static int lp5562_parse_dt(struct device *dev, struct led_i2c_platform_data *pda
 static int test_level = 0;
 static bool test = false;
 static void ntf_listener(char* event, int num_param, char* str_param) {
-        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
                 pr_info("%s leds_qpnp ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
         }
 

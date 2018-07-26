@@ -693,7 +693,7 @@ EXPORT_SYMBOL(flash_stop_blink);
 
 #ifdef CONFIG_UCI_NOTIFICATIONS
 static void ntf_listener(char* event, int num_param, char* str_param) {
-	if (strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+	if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
 		pr_info("%s blink ntf_timer listener event %s %d %s\n",__func__,event,num_param,str_param);
 	}
 	if (!strcmp(event,NTF_EVENT_NOTIFICATION)) {

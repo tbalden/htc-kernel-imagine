@@ -3910,7 +3910,7 @@ static struct kobject *fpf_kobj;
 #ifdef CONFIG_UCI_NOTIFICATIONS
 bool charging = true;
 static void ntf_listener(char* event, int num_param, char* str_param) {
-        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
+        if (strcmp(event,NTF_EVENT_CHARGE_LEVEL) && strcmp(event, NTF_EVENT_INPUT)) {
                 pr_info("%s fpf ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
         }
 
