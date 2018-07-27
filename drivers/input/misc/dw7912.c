@@ -490,7 +490,16 @@ static void dw7912_haptics_work(struct work_struct *work)
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x01);
 			gprintk("%s\n", "on with pattern 5");
 		} else {
-			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x00);
+#if 1
+			int ret = 0;
+			ret = i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x00);
+			if (ret<0) {
+				pr_info("%s [flashwake] [VIB] i2c error... waking idle cpus and retry... %d\n",__func__,ret);
+				wake_up_all_idle_cpus();
+				mdelay(30);
+				ret = i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x00);
+			}
+#endif
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x03, 0x01);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x0c, 0x06);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x14, 0x0F);
