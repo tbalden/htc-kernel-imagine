@@ -38,6 +38,9 @@ static struct workqueue_struct *flash_start_blink_workqueue;
 static struct workqueue_struct *flash_stop_blink_workqueue;
 static struct workqueue_struct *vib_workqueue;
 
+// storing current executing cpu number to queue blink work on it...
+static int smp_processor = -1;
+
 static int currently_torch_mode = 0;
 static int currently_blinking = 0;
 void ntf_set_cam_flashlight(bool on) {
@@ -540,7 +543,7 @@ exit:
 
 static void flash_start_blink_work_func(struct work_struct *work)
 {
-	pr_info("%s flash_blink\n",__func__);
+	pr_info("%s  [flashwake] flash_blink start work func\n",__func__);
 #ifdef LOCKING
 	spin_lock(&blink_spinlock);
 //	mutex_lock(&flash_blink_lock);
@@ -591,7 +594,7 @@ static void flash_stop_blink_work_func(struct work_struct *work)
 
 	if (!currently_blinking) goto exit;
 	if (currently_torch_mode) goto exit;
-	pr_info("%s flash_blink\n",__func__);
+	pr_info("%s [flashwake] flash_blink stop work func...\n",__func__);
 	currently_blinking = 0;
 	qpnp_torch_main(0,0);
 	interrupt_retime = 1;
@@ -605,7 +608,7 @@ exit:
 }
 
 void flash_blink(bool haptic) {
-	pr_info("%s flash_blink\n",__func__);
+	pr_info("%s [flashwake] flash_blink\n",__func__);
 	// is flash blink on?
 	if (!smart_get_flash_blink_on()) return;
 	// if not a haptic notificcation and haptic blink mode on, do not do blinking...
@@ -624,7 +627,8 @@ EXPORT_SYMBOL(flash_blink);
 
 static void flash_blink_work_func(struct work_struct *work)
 {
-	pr_info("%s flash_blink\n",__func__);
+	pr_info("%s [flashwake] flash_blink work executing... calling do_flash_blink, set smp to -1...\n",__func__);
+	smp_processor = -1; // signal that work started here, no need to wake idle cpus...
 	do_flash_blink();
 }
 
@@ -644,23 +648,21 @@ static enum alarmtimer_restart vib_rtc_callback(struct alarm *al, ktime_t now)
 	return ALARMTIMER_NORESTART;
 }
 
-
-static int smp_processor = 0;
 static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_t now)
 {
-	pr_info("%s flash_blink\n",__func__);
+	pr_info("%s [flashwake] flash_blink | interrupt_retime: %d\n",__func__,interrupt_retime);
 	if (!interrupt_retime) {
 		ktime_t wakeup_time_unidle;
 		ktime_t curr_time = { .tv64 = 0 };
-		pr_info("%s blink queue work ALARM...\n",__func__);
+		pr_info("%s [flashwake] blink queue work ALARM...\n",__func__);
 		smp_processor = smp_processor_id();
-		pr_info("%s flash_blink cpu %d\n",__func__, smp_processor);
+		pr_info("%s [flashwake] flash_blink cpu %d\n",__func__, smp_processor);
 
 		// queue actual flash work on current CPU for avoiding sleeping CPU...
 		queue_work_on(smp_processor,flash_blink_workqueue, &flash_blink_work);
 
 		wakeup_time_unidle = ktime_add_us(curr_time,
-			(2000LL * 1000LL)); // 2 sec
+			(500LL * 1000LL)); // 2 sec
 		alarm_cancel(&flash_blink_unidle_smp_cpu_rtc); // stop pending alarm...
 		alarm_start_relative(&flash_blink_unidle_smp_cpu_rtc, wakeup_time_unidle); // start new...
 	}
@@ -670,10 +672,19 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 
 static enum alarmtimer_restart flash_blink_unidle_smp_cpu_rtc_callback(struct alarm *al, ktime_t now)
 {
-	pr_info("%s flash_blink cpu %d \n",__func__, smp_processor);
+	pr_info("%s [flashwake] flash_blink cpu %d interrupt_retime %d \n",__func__, smp_processor, interrupt_retime);
 	if (!interrupt_retime) {
 		// make sure Queue execution is not stuck... would mean longer pauses between blinks than should...
-		wake_up_if_idle(smp_processor);
+		//wake_up_if_idle(smp_processor);
+		if (smp_processor!=-1) {
+			pr_info("%s [flashwake] work is still pending...wake all idle #1\n",__func__);
+			wake_up_all_idle_cpus();
+			mdelay(100);
+			if (smp_processor!=-1) {
+				pr_info("%s [flashwake] work is still pending...wake all idle #2\n",__func__);
+				wake_up_all_idle_cpus();
+			}
+		}
 	}
 	return ALARMTIMER_NORESTART;
 }
@@ -683,7 +694,7 @@ void flash_stop_blink(void) {
 //	pr_info("%s flash_blink\n",__func__);
 	if (!init_done) return;
 	if (ntf_ringing) return; // screen on/user input shouldn't stop ringing triggered flashing!
-	pr_info("%s stop blink queue work...\n",__func__);
+	pr_info("%s [flashwake] stop blink queue work...\n",__func__);
 	queue_work(flash_stop_blink_workqueue, &flash_stop_blink_work);
 }
 EXPORT_SYMBOL(flash_stop_blink);
