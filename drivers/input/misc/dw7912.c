@@ -1324,24 +1324,31 @@ static void dw7912_vib_trigger_enable(struct vib_trigger_enabler *enabler, int v
 
 }
 #ifdef CONFIG_UCI
-static struct alarm vibstop_rtc;
-static enum alarmtimer_restart vibstop_rtc_callback(struct alarm *al, ktime_t now)
-{
+
+static void vibstop_work_func(struct work_struct *vibstop_work) {
 	struct dw7912_priv *pDW = Gdw7912;
 
 	pr_info("%s [VIB] cancel stop timer...\n",__func__);
 	hrtimer_cancel(&pDW->stop_timer);
 	cancel_work_sync(&pDW->haptics_work);
 
+	mutex_lock(&pDW->play_lock);
 	pr_info("%s [VIB] atomic set 0...\n",__func__);
 	atomic_set(&pDW->state, 0);
 	pDW->vibTime = 0;
 
 	schedule_work(&pDW->haptics_work);
+	mutex_unlock(&pDW->play_lock);
+}
+DECLARE_WORK(vibstop_work,vibstop_work_func);
 
+static struct alarm vibstop_rtc;
+
+static enum alarmtimer_restart vibstop_rtc_callback(struct alarm *al, ktime_t now)
+{
+	schedule_work(&vibstop_work);
         return ALARMTIMER_NORESTART;
 }
-
 
 static void dw7912_vib_trigger_reset_enable(struct vib_trigger_enabler *enabler, int value)
 {
