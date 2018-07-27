@@ -650,18 +650,19 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 {
 	pr_info("%s flash_blink\n",__func__);
 	if (!interrupt_retime) {
-		ktime_t wakeup_time_vib;
+		ktime_t wakeup_time_unidle;
 		ktime_t curr_time = { .tv64 = 0 };
 		pr_info("%s blink queue work ALARM...\n",__func__);
 		smp_processor = smp_processor_id();
 		pr_info("%s flash_blink cpu %d\n",__func__, smp_processor);
-		// queue work on current CPU for avoiding sleeping CPU...
+
+		// queue actual flash work on current CPU for avoiding sleeping CPU...
 		queue_work_on(smp_processor,flash_blink_workqueue, &flash_blink_work);
 
-		wakeup_time_vib = ktime_add_us(curr_time,
-			(2000LL * 1000LL)); // 2000 msec to usec 
+		wakeup_time_unidle = ktime_add_us(curr_time,
+			(2000LL * 1000LL)); // 2 sec
 		alarm_cancel(&flash_blink_unidle_smp_cpu_rtc); // stop pending alarm...
-		alarm_start_relative(&flash_blink_unidle_smp_cpu_rtc, wakeup_time_vib); // start new...
+		alarm_start_relative(&flash_blink_unidle_smp_cpu_rtc, wakeup_time_unidle); // start new...
 	}
 	pr_info("%s flash_blink exit\n",__func__);
 	return ALARMTIMER_NORESTART;
@@ -673,7 +674,6 @@ static enum alarmtimer_restart flash_blink_unidle_smp_cpu_rtc_callback(struct al
 	if (!interrupt_retime) {
 		// make sure Queue execution is not stuck... would mean longer pauses between blinks than should...
 		wake_up_if_idle(smp_processor);
-//		wake_up_all_idle_cpus();
 	}
 	return ALARMTIMER_NORESTART;
 }
@@ -736,7 +736,9 @@ static int __init ntf_timer_init_module(void)
 		flash_blink_unidle_smp_cpu_rtc_callback);
         alarm_init(&vib_rtc, ALARM_REALTIME,
                 vib_rtc_callback);
-        flash_blink_workqueue = create_singlethread_workqueue("flash_blink");
+        flash_blink_workqueue = alloc_workqueue("flash_blink",
+                                      WQ_HIGHPRI | WQ_MEM_RECLAIM, 0);
+
         flash_start_blink_workqueue = create_singlethread_workqueue("flash_start_blink");
         flash_stop_blink_workqueue = create_singlethread_workqueue("flash_stop_blink");
         vib_workqueue = create_singlethread_workqueue("flash_vib");
