@@ -768,14 +768,8 @@ static ssize_t dw_haptics_store_duration(struct device *dev, struct device_attri
 			boost_voltage(false);
 		}
         } else {
-                if (notification_duration_detected && smart_get_boost_on() && !should_not_boost()) {
-                        // the vmax config call of this shorter vibration could have been overridden with notification boost maximum, so set it back with stored value...
-                        notification_duration_detected = 0;
-			boost_voltage(false);
-                } else {
-                        notification_duration_detected = 0;
-			boost_voltage(false);
-                }
+                notification_duration_detected = 0;
+		boost_voltage(false);
         }
 #endif
 	return count;
@@ -1576,7 +1570,6 @@ static void set_vibrate_work_func(struct work_struct *set_vibrate_work) {
     if (power_perc == 0) return;
     if (val == 0) return;
     if (g_enabler) {
-
         dw7912_vib_trigger_reset_enable(g_enabler,val);
     }
 }
@@ -1584,6 +1577,7 @@ DECLARE_WORK(set_vibrate_work,set_vibrate_work_func);
 
 void set_vibrate(int val)
 {
+	boost_voltage(false);
 	if (g_enabler) {
 		set_val = val;
 		schedule_work(&set_vibrate_work);
@@ -1594,8 +1588,13 @@ EXPORT_SYMBOL(set_vibrate);
 void set_vibrate_boosted(int val) {
         if (smart_get_boost_on() && !should_not_boost()) { // raise voltage to boosted value in case of notification durations...
 		boost_voltage(true);
-        }
-	set_vibrate(val);
+        } else {
+		boost_voltage(false);
+	}
+	if (g_enabler) {
+		set_val = val;
+		schedule_work(&set_vibrate_work);
+	}
 }
 EXPORT_SYMBOL(set_vibrate_boosted);
 
