@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -79,6 +79,11 @@
 
 /* Maximum number of VSYNC wait attempts for RSC state transition */
 #define MAX_RSC_WAIT	5
+
+#define TOPOLOGY_DUALPIPE_MERGE_MODE(x) \
+		(((x) == SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE) || \
+		((x) == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE) || \
+		((x) == SDE_RM_TOPOLOGY_DUALPIPE_3DMERGE_DSC))
 
 /**
  * enum sde_enc_rc_events - events for resource control state machine
@@ -1496,6 +1501,29 @@ static int _sde_encoder_dsc_disable(struct sde_encoder_virt *sde_enc)
 	return ret;
 }
 
+static int _sde_encoder_switch_to_watchdog_vsync(struct drm_encoder *drm_enc)
+{
+	struct sde_encoder_virt *sde_enc;
+	struct msm_display_info disp_info;
+
+	if (!drm_enc) {
+		pr_err("invalid drm encoder\n");
+		return -EINVAL;
+	}
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+
+	sde_encoder_control_te(drm_enc, false);
+
+	memcpy(&disp_info, &sde_enc->disp_info, sizeof(disp_info));
+	disp_info.is_te_using_watchdog_timer = true;
+	_sde_encoder_update_vsync_source(sde_enc, &disp_info, false);
+
+	sde_encoder_control_te(drm_enc, true);
+
+	return 0;
+}
+
 static int _sde_encoder_update_rsc_client(
 		struct drm_encoder *drm_enc,
 		struct sde_encoder_rsc_config *config, bool enable)
@@ -1635,7 +1663,12 @@ static int _sde_encoder_update_rsc_client(
 		if (ret) {
 			SDE_ERROR_ENC(sde_enc,
 					"wait for vblank failed ret:%d\n", ret);
-			break;
+			/**
+			 * rsc hardware may hang without vsync. avoid rsc hang
+			 * by generating the vsync from watchdog timer.
+			 */
+			if (crtc->base.id == wait_vblank_crtc_id)
+				_sde_encoder_switch_to_watchdog_vsync(drm_enc);
 		}
 	}
 
@@ -2584,8 +2617,11 @@ static void sde_encoder_virt_disable(struct drm_encoder *drm_enc)
 	sde_encoder_resource_control(drm_enc, SDE_ENC_RC_EVENT_STOP);
 
 	for (i = 0; i < sde_enc->num_phys_encs; i++) {
-		if (sde_enc->phys_encs[i])
+		if (sde_enc->phys_encs[i]) {
+			sde_enc->phys_encs[i]->cont_splash_settings = false;
+			sde_enc->phys_encs[i]->cont_splash_single_flush = 0;
 			sde_enc->phys_encs[i]->connector = NULL;
+		}
 	}
 
 	sde_enc->cur_master = NULL;
@@ -3260,22 +3296,55 @@ void sde_encoder_trigger_kickoff_pending(struct drm_encoder *drm_enc)
 static void _sde_encoder_setup_dither(struct sde_encoder_phys *phys)
 {
 	void *dither_cfg;
-	int ret = 0;
+	int ret = 0, rc, i = 0;
 	size_t len = 0;
 	enum sde_rm_topology_name topology;
+	struct drm_encoder *drm_enc;
+	struct msm_mode_info mode_info;
+	struct msm_display_dsc_info *dsc = NULL;
+	struct sde_encoder_virt *sde_enc;
+	struct sde_hw_pingpong *hw_pp;
 
 	if (!phys || !phys->connector || !phys->hw_pp ||
-			!phys->hw_pp->ops.setup_dither)
+			!phys->hw_pp->ops.setup_dither || !phys->parent)
 		return;
+
 	topology = sde_connector_get_topology_name(phys->connector);
 	if ((topology == SDE_RM_TOPOLOGY_PPSPLIT) &&
 			(phys->split_role == ENC_ROLE_SLAVE))
 		return;
 
+	drm_enc = phys->parent;
+	sde_enc = to_sde_encoder_virt(drm_enc);
+	rc = _sde_encoder_get_mode_info(&sde_enc->base, &mode_info);
+	if (rc) {
+		SDE_ERROR_ENC(sde_enc, "failed to get mode info\n");
+		return;
+	}
+
+	dsc = &mode_info.comp_info.dsc_info;
+	/* disable dither for 10 bpp or 10bpc dsc config */
+	if (dsc->bpp == 10 || dsc->bpc == 10) {
+		phys->hw_pp->ops.setup_dither(phys->hw_pp, NULL, 0);
+		return;
+	}
+
 	ret = sde_connector_get_dither_cfg(phys->connector,
-				phys->connector->state, &dither_cfg, &len);
-	if (!ret)
+			phys->connector->state, &dither_cfg, &len);
+	if (ret)
+		return;
+
+	if (TOPOLOGY_DUALPIPE_MERGE_MODE(topology)) {
+		for (i = 0; i < MAX_CHANNELS_PER_ENC; i++) {
+			hw_pp = sde_enc->hw_pp[i];
+			if (hw_pp) {
+				phys->hw_pp->ops.setup_dither(hw_pp, dither_cfg,
+								len);
+			}
+		}
+	} else {
 		phys->hw_pp->ops.setup_dither(phys->hw_pp, dither_cfg, len);
+	}
 }
 
 static u32 _sde_encoder_calculate_linetime(struct sde_encoder_virt *sde_enc,
@@ -3523,6 +3592,7 @@ int sde_encoder_prepare_for_kickoff(struct drm_encoder *drm_enc,
 	SDE_ATRACE_BEGIN("enc_prepare_for_kickoff");
 	for (i = 0; i < sde_enc->num_phys_encs; i++) {
 		phys = sde_enc->phys_encs[i];
+		params->is_primary = sde_enc->disp_info.is_primary;
 		if (phys) {
 			if (phys->ops.prepare_for_kickoff) {
 				rc = phys->ops.prepare_for_kickoff(
@@ -4515,15 +4585,33 @@ int sde_encoder_update_caps_for_cont_splash(struct drm_encoder *encoder)
 			return -EINVAL;
 		}
 
+		/* update connector for master and slave phys encoders */
+		phys->connector = conn;
+		phys->cont_splash_single_flush =
+			sde_kms->splash_data.single_flush_en;
+		phys->cont_splash_settings = true;
+
 		phys->hw_pp = sde_enc->hw_pp[i];
 		if (phys->ops.cont_splash_mode_set)
 			phys->ops.cont_splash_mode_set(phys, drm_mode);
 
-		if (phys->ops.is_master && phys->ops.is_master(phys)) {
-			phys->connector = conn;
+		if (phys->ops.is_master && phys->ops.is_master(phys))
 			sde_enc->cur_master = phys;
-		}
 	}
 
 	return ret;
+}
+
+int sde_encoder_display_failure_notification(struct drm_encoder *enc)
+{
+	/**
+	 * panel may stop generating te signal (vsync) during esd failure. rsc
+	 * hardware may hang without vsync. Avoid rsc hang by generating the
+	 * vsync from watchdog timer instead of panel.
+	 */
+	_sde_encoder_switch_to_watchdog_vsync(enc);
+
+	sde_encoder_wait_for_event(enc, MSM_ENC_TX_COMPLETE);
+
+	return 0;
 }

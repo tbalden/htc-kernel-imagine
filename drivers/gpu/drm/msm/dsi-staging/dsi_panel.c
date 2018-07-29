@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -348,6 +348,30 @@ static int dsi_panel_gpio_release(struct dsi_panel *panel)
 		gpio_free(panel->reset_config.lcd_mode_sel_gpio);
 
 	return rc;
+}
+
+int dsi_panel_trigger_esd_attack(struct dsi_panel *panel)
+{
+	struct dsi_panel_reset_config *r_config;
+
+	if (!panel) {
+		pr_err("Invalid panel param\n");
+		return -EINVAL;
+	}
+
+	r_config = &panel->reset_config;
+	if (!r_config) {
+		pr_err("Invalid panel reset configuration\n");
+		return -EINVAL;
+	}
+
+	if (gpio_is_valid(r_config->reset_gpio)) {
+		gpio_set_value(r_config->reset_gpio, 0);
+		pr_info("GPIO pulled low to simulate ESD\n");
+		return 0;
+	}
+	pr_err("failed to pull down gpio\n");
+	return -EINVAL;
 }
 
 static int dsi_panel_reset(struct dsi_panel *panel)
@@ -1538,7 +1562,7 @@ static int dsi_panel_create_cmd_packets(const char *data,
 		cmd[i].msg.channel = data[2];
 		cmd[i].msg.flags |= (data[3] == 1 ? MIPI_DSI_MSG_REQ_ACK : 0);
 		cmd[i].msg.ctrl = 0;
-		cmd[i].post_wait_ms = data[4];
+		cmd[i].post_wait_ms = cmd[i].msg.wait_ms = data[4];
 		cmd[i].msg.tx_len = ((data[5] << 8) | (data[6]));
 
 		size = cmd[i].msg.tx_len * sizeof(u8);
@@ -2208,9 +2232,8 @@ int dsi_dsc_populate_static_param(struct msm_display_dsc_info *dsc)
 	int final_value, final_scale;
 	int ratio_index;
 
-	dsc->version = 0x11;
-	dsc->scr_rev = 0;
 	dsc->rc_model_size = 8192;
+
 	if (dsc->version == 0x11 && dsc->scr_rev == 0x1)
 		dsc->first_line_bpg_offset = 15;
 	else
@@ -2400,6 +2423,36 @@ static int dsi_panel_parse_dsc_params(struct dsi_display_mode *mode,
 	if (!priv_info->dsc_enabled) {
 		pr_debug("dsc compression is not enabled for the mode");
 		return 0;
+	}
+
+	rc = of_property_read_u32(of_node, "qcom,mdss-dsc-version", &data);
+	if (rc) {
+		priv_info->dsc.version = 0x11;
+		rc = 0;
+	} else {
+		priv_info->dsc.version = data & 0xff;
+		/* only support DSC 1.1 rev */
+		if (priv_info->dsc.version != 0x11) {
+			pr_err("%s: DSC version:%d not supported\n", __func__,
+					priv_info->dsc.version);
+			rc = -EINVAL;
+			goto error;
+		}
+	}
+
+	rc = of_property_read_u32(of_node, "qcom,mdss-dsc-scr-version", &data);
+	if (rc) {
+		priv_info->dsc.scr_rev = 0x0;
+		rc = 0;
+	} else {
+		priv_info->dsc.scr_rev = data & 0xff;
+		/* only one scr rev supported */
+		if (priv_info->dsc.scr_rev > 0x1) {
+			pr_err("%s: DSC scr version:%d not supported\n",
+					__func__, priv_info->dsc.scr_rev);
+			rc = -EINVAL;
+			goto error;
+		}
 	}
 
 	rc = of_property_read_u32(of_node, "qcom,mdss-dsc-slice-height", &data);
@@ -2781,54 +2834,23 @@ static void dsi_panel_esd_config_deinit(struct drm_panel_esd_config *esd_config)
 	kfree(esd_config->status_cmd.cmds);
 }
 
-static int dsi_panel_parse_esd_config(struct dsi_panel *panel,
-				     struct device_node *of_node)
+int dsi_panel_parse_esd_reg_read_configs(struct dsi_panel *panel,
+				struct device_node *of_node)
 {
+	struct drm_panel_esd_config *esd_config;
 	int rc = 0;
 	u32 tmp;
 	u32 i, status_len, *lenp;
 	struct property *data;
-	const char *string;
-	struct drm_panel_esd_config *esd_config;
-	u8 *esd_mode = NULL;
 
-	esd_config = &panel->esd_config;
-	esd_config->status_mode = ESD_MODE_MAX;
-	esd_config->esd_enabled = of_property_read_bool(of_node,
-		"qcom,esd-check-enabled");
-
-	if (!esd_config->esd_enabled)
-		return 0;
-
-	rc = of_property_read_string(of_node,
-			"qcom,mdss-dsi-panel-status-check-mode", &string);
-	if (!rc) {
-		if (!strcmp(string, "bta_check")) {
-			esd_config->status_mode = ESD_MODE_SW_BTA;
-		} else if (!strcmp(string, "reg_read")) {
-			esd_config->status_mode = ESD_MODE_REG_READ;
-		} else if (!strcmp(string, "te_signal_check")) {
-			if (panel->panel_mode == DSI_OP_CMD_MODE) {
-				esd_config->status_mode = ESD_MODE_PANEL_TE;
-			} else {
-				pr_err("TE-ESD not valid for video mode\n");
-				rc = -EINVAL;
-				goto error;
-			}
-		} else {
-			pr_err("No valid panel-status-check-mode string\n");
-			rc = -EINVAL;
-			goto error;
-		}
-	} else {
-		pr_debug("status check method not defined!\n");
-		rc = -EINVAL;
-		goto error;
+	if (!panel || !of_node) {
+		pr_err("Invalid Params\n");
+		return -EINVAL;
 	}
 
-	if ((esd_config->status_mode == ESD_MODE_SW_BTA) ||
-		(esd_config->status_mode == ESD_MODE_PANEL_TE))
-		return 0;
+	esd_config = &panel->esd_config;
+	if (!esd_config)
+		return -EINVAL;
 
 	dsi_panel_parse_cmd_sets_sub(&esd_config->status_cmd,
 				DSI_CMD_SET_PANEL_STATUS, of_node);
@@ -2888,7 +2910,7 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel,
 	}
 
 	esd_config->status_value =
-		kzalloc(sizeof(u32) * status_len * esd_config->groups,
+		kzalloc(array3_size(sizeof(u32), status_len, esd_config->groups),
 			GFP_KERNEL);
 	if (!esd_config->status_value) {
 		rc = -ENOMEM;
@@ -2903,8 +2925,10 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel,
 	}
 
 	esd_config->status_buf = kzalloc(SZ_4K, GFP_KERNEL);
-	if (!esd_config->status_buf)
+	if (!esd_config->status_buf) {
+		rc = -ENOMEM;
 		goto error4;
+	}
 
 	rc = of_property_read_u32_array(of_node,
 		"qcom,mdss-dsi-panel-status-value",
@@ -2914,15 +2938,6 @@ static int dsi_panel_parse_esd_config(struct dsi_panel *panel,
 		memset(esd_config->status_value, 0,
 				esd_config->groups * status_len);
 	}
-
-	if (panel->esd_config.status_mode == ESD_MODE_REG_READ)
-		esd_mode = "register_read";
-	else if (panel->esd_config.status_mode == ESD_MODE_SW_BTA)
-		esd_mode = "bta_trigger";
-	else if (panel->esd_config.status_mode ==  ESD_MODE_PANEL_TE)
-		esd_mode = "te_check";
-
-	pr_info("ESD enabled with mode: %s\n", esd_mode);
 
 	return 0;
 
@@ -2935,6 +2950,70 @@ error2:
 	kfree(esd_config->status_cmds_rlen);
 error1:
 	kfree(esd_config->status_cmd.cmds);
+error:
+	return rc;
+}
+
+static int dsi_panel_parse_esd_config(struct dsi_panel *panel,
+				     struct device_node *of_node)
+{
+	int rc = 0;
+	const char *string;
+	struct drm_panel_esd_config *esd_config;
+	u8 *esd_mode = NULL;
+
+	esd_config = &panel->esd_config;
+	esd_config->status_mode = ESD_MODE_MAX;
+	esd_config->esd_enabled = of_property_read_bool(of_node,
+		"qcom,esd-check-enabled");
+
+	if (!esd_config->esd_enabled)
+		return 0;
+
+	rc = of_property_read_string(of_node,
+			"qcom,mdss-dsi-panel-status-check-mode", &string);
+	if (!rc) {
+		if (!strcmp(string, "bta_check")) {
+			esd_config->status_mode = ESD_MODE_SW_BTA;
+		} else if (!strcmp(string, "reg_read")) {
+			esd_config->status_mode = ESD_MODE_REG_READ;
+		} else if (!strcmp(string, "te_signal_check")) {
+			if (panel->panel_mode == DSI_OP_CMD_MODE) {
+				esd_config->status_mode = ESD_MODE_PANEL_TE;
+			} else {
+				pr_err("TE-ESD not valid for video mode\n");
+				rc = -EINVAL;
+				goto error;
+			}
+		} else {
+			pr_err("No valid panel-status-check-mode string\n");
+			rc = -EINVAL;
+			goto error;
+		}
+	} else {
+		pr_debug("status check method not defined!\n");
+		rc = -EINVAL;
+		goto error;
+	}
+
+	if (panel->esd_config.status_mode == ESD_MODE_REG_READ) {
+		rc = dsi_panel_parse_esd_reg_read_configs(panel, of_node);
+		if (rc) {
+			pr_err("failed to parse esd reg read mode params, rc=%d\n",
+						rc);
+			goto error;
+		}
+		esd_mode = "register_read";
+	} else if (panel->esd_config.status_mode == ESD_MODE_SW_BTA) {
+		esd_mode = "bta_trigger";
+	} else if (panel->esd_config.status_mode ==  ESD_MODE_PANEL_TE) {
+		esd_mode = "te_check";
+	}
+
+	pr_info("ESD enabled with mode: %s\n", esd_mode);
+
+	return 0;
+
 error:
 	panel->esd_config.esd_enabled = false;
 	return rc;
@@ -3267,11 +3346,7 @@ int dsi_panel_get_phy_props(struct dsi_panel *panel,
 		return -EINVAL;
 	}
 
-	mutex_lock(&panel->panel_lock);
-
 	memcpy(phy_props, &panel->phy_props, sizeof(*phy_props));
-
-	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
 
@@ -3285,11 +3360,7 @@ int dsi_panel_get_dfps_caps(struct dsi_panel *panel,
 		return -EINVAL;
 	}
 
-	mutex_lock(&panel->panel_lock);
-
 	memcpy(dfps_caps, &panel->dfps_caps, sizeof(*dfps_caps));
-
-	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
 
@@ -3635,6 +3706,7 @@ static int dsi_panel_roi_prepare_dcs_cmds(struct dsi_panel_cmd_set *set,
 	set->cmds[0].msg.tx_buf = caset;
 	set->cmds[0].msg.rx_len = 0;
 	set->cmds[0].msg.rx_buf = 0;
+	set->cmds[0].msg.wait_ms = 0;
 	set->cmds[0].last_command = 0;
 	set->cmds[0].post_wait_ms = 1;
 
@@ -3646,6 +3718,7 @@ static int dsi_panel_roi_prepare_dcs_cmds(struct dsi_panel_cmd_set *set,
 	set->cmds[1].msg.tx_buf = paset;
 	set->cmds[1].msg.rx_len = 0;
 	set->cmds[1].msg.rx_buf = 0;
+	set->cmds[1].msg.wait_ms = 0;
 	set->cmds[1].last_command = 1;
 	set->cmds[1].post_wait_ms = 1;
 

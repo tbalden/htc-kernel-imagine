@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -285,10 +285,17 @@ int dsi_core_clk_stop(struct dsi_core_clks *c_clks)
 	return rc;
 }
 
-static int dsi_link_clk_set_rate(struct dsi_link_clks *l_clks, struct dsi_clk_mngr *mngr)
+static int dsi_link_clk_set_rate(struct dsi_link_clks *l_clks, int index)
 {
 	int rc = 0;
+	struct dsi_clk_mngr *mngr;
 
+	if (index >= MAX_DSI_CTRL) {
+		pr_err("Invalid DSI ctrl index\n");
+		return -EINVAL;
+	}
+
+	mngr = container_of(l_clks, struct dsi_clk_mngr, link_clks[index]);
 	if (mngr->is_cont_splash_enabled)
 		return 0;
 	/*
@@ -440,11 +447,16 @@ static void dsi_link_clk_disable(struct dsi_link_clks *l_clks)
 /**
  * dsi_link_clk_start() - enable dsi link clocks
  */
-int dsi_link_clk_start(struct dsi_link_clks *clks, struct dsi_clk_mngr *mngr)
+static int dsi_link_clk_start(struct dsi_link_clks *clks, int index)
 {
 	int rc = 0;
 
-	rc = dsi_link_clk_set_rate(clks, mngr);
+	if (index >= MAX_DSI_CTRL) {
+		pr_err("Invalid DSI ctrl index\n");
+		return -EINVAL;
+	}
+
+	rc = dsi_link_clk_set_rate(clks, index);
 	if (rc) {
 		pr_err("failed to set clk rates, rc = %d\n", rc);
 		goto error;
@@ -549,7 +561,6 @@ static int dsi_display_link_clk_enable(struct dsi_link_clks *clks,
 	int rc = 0;
 	int i;
 	struct dsi_link_clks *clk, *m_clks;
-	struct dsi_clk_mngr *mngr;
 
 	/*
 	 * In case of split DSI usecases, the clock for master controller should
@@ -558,9 +569,8 @@ static int dsi_display_link_clk_enable(struct dsi_link_clks *clks,
 	 */
 
 	m_clks = &clks[master_ndx];
-	mngr = container_of(clks, struct dsi_clk_mngr, link_clks[0]);
 
-	rc = dsi_link_clk_start(m_clks, mngr);
+	rc = dsi_link_clk_start(m_clks, master_ndx);
 	if (rc) {
 		pr_err("failed to turn on master clocks, rc=%d\n", rc);
 		goto error;
@@ -572,7 +582,7 @@ static int dsi_display_link_clk_enable(struct dsi_link_clks *clks,
 		if (!clk || (clk == m_clks))
 			continue;
 
-		rc = dsi_link_clk_start(clk, mngr);
+		rc = dsi_link_clk_start(clk, i);
 		if (rc) {
 			pr_err("failed to turn on clocks, rc=%d\n", rc);
 			goto error_disable_master;
@@ -1060,6 +1070,69 @@ int dsi_clk_req_state(void *client, enum dsi_clk_type clk,
 }
 
 DEFINE_MUTEX(dsi_mngr_clk_mutex);
+
+static int dsi_display_link_clk_force_update(void *client)
+{
+	int rc = 0;
+	struct dsi_clk_client_info *c = client;
+	struct dsi_clk_mngr *mngr;
+	struct dsi_link_clks *l_clks;
+
+	mngr = c->mngr;
+	mutex_lock(&mngr->clk_mutex);
+
+	l_clks = mngr->link_clks;
+
+	/*
+	 * When link_clk_state is DSI_CLK_OFF, don't change DSI clock rate
+	 * since it is possible to be overwritten, and return -EAGAIN to
+	 * dynamic DSI writing interface to defer the reenabling to the next
+	 * drm commit.
+	 */
+	if (mngr->link_clk_state == DSI_CLK_OFF) {
+		rc = -EAGAIN;
+		goto error;
+	}
+
+	rc = dsi_display_link_clk_disable(l_clks,
+		mngr->dsi_ctrl_count, mngr->master_ndx);
+	if (rc) {
+		pr_err("%s, failed to stop link clk, rc = %d\n",
+			__func__, rc);
+		goto error;
+	}
+
+	rc = dsi_display_link_clk_enable(l_clks,
+		mngr->dsi_ctrl_count, mngr->master_ndx);
+	if (rc) {
+		pr_err("%s, failed to start link clk rc= %d\n",
+			__func__, rc);
+		goto error;
+	}
+
+error:
+	mutex_unlock(&mngr->clk_mutex);
+	return rc;
+
+}
+
+int dsi_display_link_clk_force_update_ctrl(void *handle)
+{
+	int rc = 0;
+
+	if (!handle) {
+		pr_err("%s: Invalid arg\n", __func__);
+		return -EINVAL;
+	}
+
+	mutex_lock(&dsi_mngr_clk_mutex);
+
+	rc = dsi_display_link_clk_force_update(handle);
+
+	mutex_unlock(&dsi_mngr_clk_mutex);
+
+	return rc;
+}
 
 int dsi_display_clk_ctrl(void *handle,
 	enum dsi_clk_type clk_type, enum dsi_clk_state clk_state)

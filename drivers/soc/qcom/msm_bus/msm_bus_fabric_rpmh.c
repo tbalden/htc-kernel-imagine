@@ -615,7 +615,7 @@ int msm_bus_commit_data(struct list_head *clist)
 		MSM_BUS_ERR("%s: Error invalidating mbox: %d\n",
 						__func__, ret);
 
-	if (cur_rsc->rscdev->req_state == RPMH_AWAKE_STATE) {
+	if (cur_rsc->node_info->id == MSM_BUS_RSC_DISP) {
 		ret = rpmh_write(cur_mbox, cur_rsc->rscdev->req_state,
 						cmdlist_active, cnt_active);
 		/*
@@ -1274,8 +1274,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 
 	node_info->name = pdata_node_info->name;
 	node_info->id =  pdata_node_info->id;
-	node_info->bcm_req_idx = devm_kzalloc(bus_dev,
-			sizeof(int) * pdata_node_info->num_bcm_devs,
+	node_info->bcm_req_idx = devm_kcalloc(bus_dev,
+			pdata_node_info->num_bcm_devs, sizeof(int),
 			GFP_KERNEL);
 	if (!node_info->bcm_req_idx) {
 		ret = -ENOMEM;
@@ -1329,9 +1329,9 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 				pdata_node_info->agg_params.num_aggports;
 	node_info->agg_params.num_util_levels =
 				pdata_node_info->agg_params.num_util_levels;
-	node_info->agg_params.util_levels = devm_kzalloc(bus_dev,
-			sizeof(struct node_util_levels_type) *
+	node_info->agg_params.util_levels = devm_kcalloc(bus_dev,
 			node_info->agg_params.num_util_levels,
+			sizeof(struct node_util_levels_type),
 			GFP_KERNEL);
 	if (!node_info->agg_params.util_levels) {
 		MSM_BUS_ERR("%s: Agg util level alloc failed\n", __func__);
@@ -1343,9 +1343,9 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		sizeof(struct node_util_levels_type) *
 			pdata_node_info->agg_params.num_util_levels);
 
-	node_info->dev_connections = devm_kzalloc(bus_dev,
-			sizeof(struct device *) *
-				pdata_node_info->num_connections,
+	node_info->dev_connections = devm_kcalloc(bus_dev,
+			pdata_node_info->num_connections,
+			sizeof(struct device *),
 			GFP_KERNEL);
 	if (!node_info->dev_connections) {
 		MSM_BUS_ERR("%s:Bus dev connections alloc failed\n", __func__);
@@ -1353,8 +1353,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		goto exit_copy_node_info;
 	}
 
-	node_info->connections = devm_kzalloc(bus_dev,
-			sizeof(int) * pdata_node_info->num_connections,
+	node_info->connections = devm_kcalloc(bus_dev,
+			pdata_node_info->num_connections, sizeof(int),
 			GFP_KERNEL);
 	if (!node_info->connections) {
 		MSM_BUS_ERR("%s:Bus connections alloc failed\n", __func__);
@@ -1367,9 +1367,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		pdata_node_info->connections,
 		sizeof(int) * pdata_node_info->num_connections);
 
-	node_info->black_connections = devm_kzalloc(bus_dev,
-			sizeof(struct device *) *
-				pdata_node_info->num_blist,
+	node_info->black_connections = devm_kcalloc(bus_dev,
+			pdata_node_info->num_blist, sizeof(struct device *),
 			GFP_KERNEL);
 	if (!node_info->black_connections) {
 		MSM_BUS_ERR("%s: Bus black connections alloc failed\n",
@@ -1380,8 +1379,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		goto exit_copy_node_info;
 	}
 
-	node_info->black_listed_connections = devm_kzalloc(bus_dev,
-			pdata_node_info->num_blist * sizeof(int),
+	node_info->black_listed_connections = devm_kcalloc(bus_dev,
+			pdata_node_info->num_blist, sizeof(int),
 			GFP_KERNEL);
 	if (!node_info->black_listed_connections) {
 		MSM_BUS_ERR("%s:Bus black list connections alloc failed\n",
@@ -1397,9 +1396,9 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		pdata_node_info->black_listed_connections,
 		sizeof(int) * pdata_node_info->num_blist);
 
-	node_info->bcm_devs = devm_kzalloc(bus_dev,
-			sizeof(struct device *) *
-				pdata_node_info->num_bcm_devs,
+	node_info->bcm_devs = devm_kcalloc(bus_dev,
+			pdata_node_info->num_bcm_devs,
+			sizeof(struct device *),
 			GFP_KERNEL);
 	if (!node_info->bcm_devs) {
 		MSM_BUS_ERR("%s:Bcm dev connections alloc failed\n", __func__);
@@ -1407,8 +1406,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		goto exit_copy_node_info;
 	}
 
-	node_info->bcm_dev_ids = devm_kzalloc(bus_dev,
-			sizeof(int) * pdata_node_info->num_bcm_devs,
+	node_info->bcm_dev_ids = devm_kcalloc(bus_dev,
+			pdata_node_info->num_bcm_devs, sizeof(int),
 			GFP_KERNEL);
 	if (!node_info->bcm_dev_ids) {
 		MSM_BUS_ERR("%s:Bus connections alloc failed\n", __func__);
@@ -1421,9 +1420,9 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		pdata_node_info->bcm_dev_ids,
 		sizeof(int) * pdata_node_info->num_bcm_devs);
 
-	node_info->rsc_devs = devm_kzalloc(bus_dev,
-			sizeof(struct device *) *
-				pdata_node_info->num_rsc_devs,
+	node_info->rsc_devs = devm_kcalloc(bus_dev,
+			pdata_node_info->num_rsc_devs,
+			sizeof(struct device *),
 			GFP_KERNEL);
 	if (!node_info->rsc_devs) {
 		MSM_BUS_ERR("%s:rsc dev connections alloc failed\n", __func__);
@@ -1431,8 +1430,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		goto exit_copy_node_info;
 	}
 
-	node_info->rsc_dev_ids = devm_kzalloc(bus_dev,
-			sizeof(int) * pdata_node_info->num_rsc_devs,
+	node_info->rsc_dev_ids = devm_kcalloc(bus_dev,
+			pdata_node_info->num_rsc_devs, sizeof(int),
 			GFP_KERNEL);
 	if (!node_info->rsc_dev_ids) {
 		MSM_BUS_ERR("%s:Bus connections alloc failed\n", __func__);
@@ -1445,8 +1444,8 @@ static int msm_bus_copy_node_info(struct msm_bus_node_device_type *pdata,
 		pdata_node_info->rsc_dev_ids,
 		sizeof(int) * pdata_node_info->num_rsc_devs);
 
-	node_info->qport = devm_kzalloc(bus_dev,
-			sizeof(int) * pdata_node_info->num_qports,
+	node_info->qport = devm_kcalloc(bus_dev,
+			pdata_node_info->num_qports, sizeof(int),
 			GFP_KERNEL);
 	if (!node_info->qport) {
 		MSM_BUS_ERR("%s:Bus qport allocation failed\n", __func__);
@@ -1471,7 +1470,7 @@ static struct device *msm_bus_device_init(
 	struct device *bus_dev = NULL;
 	struct msm_bus_node_device_type *bus_node = NULL;
 	struct msm_bus_node_info_type *node_info = NULL;
-	int ret = 0, i = 0;
+	int ret = -ENODEV, i = 0;
 
 	/**
 	* Init here so we can use devm calls
@@ -1479,10 +1478,8 @@ static struct device *msm_bus_device_init(
 
 	bus_node = kzalloc(sizeof(struct msm_bus_node_device_type), GFP_KERNEL);
 	if (!bus_node) {
-		MSM_BUS_ERR("%s:Bus node alloc failed\n", __func__);
-		kfree(bus_dev);
-		bus_dev = NULL;
-		goto exit_device_init;
+		ret = -ENOMEM;
+		goto err_device_init;
 	}
 	bus_dev = &bus_node->dev;
 	device_initialize(bus_dev);
@@ -1490,11 +1487,8 @@ static struct device *msm_bus_device_init(
 	node_info = devm_kzalloc(bus_dev,
 			sizeof(struct msm_bus_node_info_type), GFP_KERNEL);
 	if (!node_info) {
-		MSM_BUS_ERR("%s:Bus node info alloc failed\n", __func__);
-		devm_kfree(bus_dev, bus_node);
-		kfree(bus_dev);
-		bus_dev = NULL;
-		goto exit_device_init;
+		ret = -ENOMEM;
+		goto err_put_device;
 	}
 
 	bus_node->node_info = node_info;
@@ -1505,8 +1499,10 @@ static struct device *msm_bus_device_init(
 		bus_node->qos_bcms = devm_kzalloc(bus_dev,
 					(sizeof(struct qos_bcm_type) *
 					bus_node->num_qos_bcms), GFP_KERNEL);
-		if (!bus_node->qos_bcms)
-			goto exit_device_init;
+		if (!bus_node->qos_bcms) {
+			ret = -ENOMEM;
+			goto err_put_device;
+		}
 		for (i = 0; i < bus_node->num_qos_bcms; i++) {
 			bus_node->qos_bcms[i].qos_bcm_id =
 					pdata->qos_bcms[i].qos_bcm_id;
@@ -1519,36 +1515,29 @@ static struct device *msm_bus_device_init(
 
 	bus_dev->of_node = pdata->of_node;
 
-	if (msm_bus_copy_node_info(pdata, bus_dev) < 0) {
-		devm_kfree(bus_dev, bus_node);
-		devm_kfree(bus_dev, node_info);
-		kfree(bus_dev);
-		bus_dev = NULL;
-		goto exit_device_init;
-	}
+	ret = msm_bus_copy_node_info(pdata, bus_dev);
+	if (ret)
+		goto err_put_device;
 
 	bus_dev->bus = &msm_bus_type;
 	dev_set_name(bus_dev, bus_node->node_info->name);
 
 	ret = device_add(bus_dev);
-	if (ret < 0) {
+	if (ret) {
 		MSM_BUS_ERR("%s: Error registering device %d",
 				__func__, pdata->node_info->id);
-		devm_kfree(bus_dev, bus_node);
-		devm_kfree(bus_dev, node_info->dev_connections);
-		devm_kfree(bus_dev, node_info->connections);
-		devm_kfree(bus_dev, node_info->black_connections);
-		devm_kfree(bus_dev, node_info->black_listed_connections);
-		devm_kfree(bus_dev, node_info);
-		kfree(bus_dev);
-		bus_dev = NULL;
-		goto exit_device_init;
+		goto err_put_device;
 	}
 	device_create_file(bus_dev, &dev_attr_bw);
 	INIT_LIST_HEAD(&bus_node->devlist);
-
-exit_device_init:
 	return bus_dev;
+
+err_put_device:
+	put_device(bus_dev);
+	bus_dev = NULL;
+	kfree(bus_node);
+err_device_init:
+	return ERR_PTR(ret);
 }
 
 static int msm_bus_setup_dev_conn(struct device *bus_dev, void *data)
@@ -1736,10 +1725,10 @@ static int msm_bus_device_probe(struct platform_device *pdev)
 
 		node_dev = msm_bus_device_init(&pdata->info[i]);
 
-		if (!node_dev) {
+		if (IS_ERR(node_dev)) {
 			MSM_BUS_ERR("%s: Error during dev init for %d",
 				__func__, pdata->info[i].node_info->id);
-			ret = -ENXIO;
+			ret = PTR_ERR(node_dev);
 			goto exit_device_probe;
 		}
 

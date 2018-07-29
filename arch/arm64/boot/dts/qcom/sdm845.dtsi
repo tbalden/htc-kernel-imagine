@@ -778,6 +778,7 @@
 		      <0x17a60000 0x100000>;    /* GICR * 8 */
 		interrupts = <1 9 4>;
 		interrupt-parent = <&intc>;
+		ignored-save-restore-irqs = <38>;
 	};
 
 	pdc: interrupt-controller@b220000{
@@ -1541,8 +1542,7 @@
 					  "gpll0_mss_clk", "snoc_axi_clk",
 					  "mnoc_axi_clk";
 
-		interrupts = <0 266 1>,
-			     <GIC_SPI 390 IRQ_TYPE_EDGE_RISING>;
+		interrupts = <0 266 1>;
 		vdd_cx-supply = <&pm8998_s9_level>;
 		vdd_cx-voltage = <RPMH_REGULATOR_LEVEL_TURBO>;
 		vdd_mx-supply = <&pm8998_s6_level>;
@@ -1552,6 +1552,7 @@
 		qcom,firmware-name = "modem";
 		qcom,pil-self-auth;
 		qcom,sysmon-id = <0>;
+		qcom,minidump-id = <3>;
 		qcom,ssctl-instance-id = <0x12>;
 		qcom,override-acc;
 		qcom,signal-aop;
@@ -1911,6 +1912,11 @@
 			reg = <0x65c 4>;
 		};
 
+		dload_type@1c {
+			compatible = "qcom,msm-imem-dload-type";
+			reg = <0x1c 0x4>;
+		};
+
 		restart_info@a94 {
 			compatible = "htc,msm-imem-restart_info";
 			reg = <0xa94 100>;
@@ -1930,6 +1936,11 @@
 		kaslr_offset@6d0 {
 			compatible = "qcom,msm-imem-kaslr_offset";
 			reg = <0x6d0 12>;
+		};
+
+		reduced_sdi_mode@6dc {
+			compatible = "qcom,msm-imem-reduced_sdi_mode";
+			reg = <0x6dc 4>;
 		};
 
 		diag_dload@c8 {
@@ -3778,57 +3789,57 @@
 		compatible = "qcom,mem-dump";
 		memory-region = <&dump_mem>;
 
-		rpmh_dump {
+		rpmh {
 			qcom,dump-size = <0x2000000>;
 			qcom,dump-id = <0xec>;
 		};
 
-		fcm_dump {
-			qcom,dump-size = <0x400>;
+		fcm {
+			qcom,dump-size = <0x8400>;
 			qcom,dump-id = <0xee>;
 		};
 
-		rpm_sw_dump {
+		rpm_sw {
 			qcom,dump-size = <0x28000>;
 			qcom,dump-id = <0xea>;
 		};
 
-		pmic_dump {
+		pmic {
 			qcom,dump-size = <0x10000>;
 			qcom,dump-id = <0xe4>;
 		};
 
-		tmc_etf_dump {
+		tmc_etf {
 			qcom,dump-size = <0x10000>;
 			qcom,dump-id = <0xf0>;
 		};
 
-		tmc_etf_swao_dump {
+		tmc_etfswao {
 			qcom,dump-size = <0x8400>;
 			qcom,dump-id = <0xf1>;
 		};
 
-		tmc_etr_reg_dump {
+		tmc_etr_reg {
 			qcom,dump-size = <0x1000>;
 			qcom,dump-id = <0x100>;
 		};
 
-		tmc_etf_reg_dump {
+		tmc_etf_reg {
 			qcom,dump-size = <0x1000>;
 			qcom,dump-id = <0x101>;
 		};
 
-		tmc_etf_swao_reg_dump {
+		etfswao_reg {
 			qcom,dump-size = <0x1000>;
 			qcom,dump-id = <0x102>;
 		};
 
-		misc_data_dump {
+		misc_data {
 			qcom,dump-size = <0x1000>;
 			qcom,dump-id = <0xe8>;
 		};
 
-		tpdm_swao_dump {
+		tpdm_swao {
 			qcom,dump-size = <0x512>;
 			qcom,dump-id = <0xf2>;
 		};
@@ -4053,6 +4064,7 @@
 };
 
 &gpu_cx_gdsc {
+	parent-supply = <&pm8998_s9_level>;
 	status = "ok";
 };
 

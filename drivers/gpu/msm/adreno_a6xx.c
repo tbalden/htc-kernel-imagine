@@ -64,6 +64,9 @@ static const struct adreno_vbif_platform a6xx_vbif_platforms[] = {
 	{ adreno_is_a615, a615_gbif },
 };
 
+
+static unsigned long a6xx_oob_state_bitmask;
+
 struct kgsl_hwcg_reg {
 	unsigned int off;
 	unsigned int val;
@@ -1081,8 +1084,8 @@ static int a6xx_rb_start(struct adreno_device *adreno_dev,
 	adreno_writereg(adreno_dev, ADRENO_REG_CP_RB_CNTL,
 					A6XX_CP_RB_CNTL_DEFAULT);
 
-	adreno_writereg(adreno_dev, ADRENO_REG_CP_RB_BASE,
-			rb->buffer_desc.gpuaddr);
+	adreno_writereg64(adreno_dev, ADRENO_REG_CP_RB_BASE,
+			ADRENO_REG_CP_RB_BASE_HI, rb->buffer_desc.gpuaddr);
 
 	ret = a6xx_microcode_load(adreno_dev);
 	if (ret)
@@ -1449,7 +1452,7 @@ static int a6xx_oob_set(struct adreno_device *adreno_dev,
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	int ret = 0;
 
-	if (!kgsl_gmu_isenabled(device))
+	if (!kgsl_gmu_isenabled(device) || !clear_mask)
 		return 0;
 
 	kgsl_gmu_regwrite(device, A6XX_GMU_HOST2GMU_INTR_SET, set_mask);
@@ -1465,6 +1468,8 @@ static int a6xx_oob_set(struct adreno_device *adreno_dev,
 
 	kgsl_gmu_regwrite(device, A6XX_GMU_GMU2HOST_INTR_CLR, clear_mask);
 
+	set_bit((fls(clear_mask) - 1), &a6xx_oob_state_bitmask);
+
 	trace_kgsl_gmu_oob_set(set_mask);
 	return ret;
 }
@@ -1479,10 +1484,15 @@ static inline void a6xx_oob_clear(struct adreno_device *adreno_dev,
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 
-	if (!kgsl_gmu_isenabled(device))
+	if (!kgsl_gmu_isenabled(device) || !clear_mask)
 		return;
 
-	kgsl_gmu_regwrite(device, A6XX_GMU_HOST2GMU_INTR_SET, clear_mask);
+	if (test_and_clear_bit(fls(clear_mask) - 1,
+				&a6xx_oob_state_bitmask))
+		kgsl_gmu_regwrite(device,
+			A6XX_GMU_HOST2GMU_INTR_SET,
+			clear_mask);
+
 	trace_kgsl_gmu_oob_clear(clear_mask);
 }
 
@@ -1694,6 +1704,10 @@ static int a6xx_rpmh_power_on_gpu(struct kgsl_device *device)
 	struct device *dev = &gmu->pdev->dev;
 	int val;
 
+	/* Only trigger wakeup sequence if sleep sequence was done earlier */
+	if (!test_bit(GMU_RSCC_SLEEP_SEQ_DONE, &gmu->flags))
+		return 0;
+
 	kgsl_gmu_regread(device, A6XX_GPU_CC_GX_DOMAIN_MISC, &val);
 	if (!(val & 0x1))
 		dev_err_ratelimited(&gmu->pdev->dev,
@@ -1723,6 +1737,9 @@ static int a6xx_rpmh_power_on_gpu(struct kgsl_device *device)
 
 	kgsl_gmu_regwrite(device, A6XX_GMU_RSCC_CONTROL_REQ, 0);
 
+	/* Clear sleep sequence flag as wakeup sequence is successful */
+	clear_bit(GMU_RSCC_SLEEP_SEQ_DONE, &gmu->flags);
+
 	/* Enable the power counter because it was disabled before slumber */
 	kgsl_gmu_regwrite(device, A6XX_GMU_CX_GMU_POWER_COUNTER_ENABLE, 1);
 
@@ -1737,6 +1754,9 @@ static int a6xx_rpmh_power_off_gpu(struct kgsl_device *device)
 	struct gmu_device *gmu = &device->gmu;
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	int ret;
+
+	if (test_bit(GMU_RSCC_SLEEP_SEQ_DONE, &gmu->flags))
+		return 0;
 
 	/* RSC sleep sequence is different on v1 */
 	if (adreno_is_a630v1(adreno_dev))
@@ -1779,6 +1799,7 @@ static int a6xx_rpmh_power_off_gpu(struct kgsl_device *device)
 			test_bit(ADRENO_LM_CTRL, &adreno_dev->pwrctrl_flag))
 		kgsl_gmu_regwrite(device, A6XX_GMU_AO_SPARE_CNTL, 0);
 
+	set_bit(GMU_RSCC_SLEEP_SEQ_DONE, &gmu->flags);
 	return 0;
 }
 
@@ -1797,15 +1818,13 @@ static int a6xx_gmu_fw_start(struct kgsl_device *device,
 	unsigned int chipid = 0;
 
 	switch (boot_state) {
-	case GMU_RESET:
-		/* fall through */
 	case GMU_COLD_BOOT:
 		/* Turn on TCM retention */
 		kgsl_gmu_regwrite(device, A6XX_GMU_GENERAL_7, 1);
 
 		if (!test_and_set_bit(GMU_BOOT_INIT_DONE, &gmu->flags))
 			_load_gmu_rpmh_ucode(device);
-		else if (boot_state != GMU_RESET) {
+		else {
 			ret = a6xx_rpmh_power_on_gpu(device);
 			if (ret)
 				return ret;
@@ -1982,6 +2001,7 @@ static int a6xx_wait_for_lowest_idle(struct adreno_device *adreno_dev)
 	unsigned int reg, reg1;
 	unsigned long t;
 	uint64_t ts1, ts2, ts3;
+	unsigned long start_jiffies, end_jiffies;
 
 	if (!kgsl_gmu_isenabled(device))
 		return 0;
@@ -1989,6 +2009,9 @@ static int a6xx_wait_for_lowest_idle(struct adreno_device *adreno_dev)
 	ts1 = read_AO_counter(device);
 
 	t = jiffies + msecs_to_jiffies(GMU_IDLE_TIMEOUT);
+	start_jiffies = jiffies;
+
+retry:
 	do {
 		kgsl_gmu_regread(device,
 			A6XX_GPU_GMU_CX_GMU_RPMH_POWER_STATE, &reg);
@@ -2001,9 +2024,22 @@ static int a6xx_wait_for_lowest_idle(struct adreno_device *adreno_dev)
 		usleep_range(10, 100);
 	} while (!time_after(jiffies, t));
 
+	end_jiffies = jiffies;
 	ts2 = read_AO_counter(device);
-	/* Check one last time */
 
+	/*
+	 * If AO counter values indicates that loop has exited
+	 * earlier then expected timeout value. Retry till we
+	 * reach the expected timeout value.
+	 */
+	if ((((ts2 - ts1) * 10) / 192) < (GMU_IDLE_TIMEOUT * USEC_PER_MSEC)) {
+		dev_err_ratelimited(&gmu->pdev->dev,
+			"Invalid wait loop exit: %08x %llx %llx %x %lx %lx %lx\n",
+			reg, ts1, ts2, reg1, t, start_jiffies, end_jiffies);
+		goto retry;
+	}
+
+	/* Check one last time */
 	kgsl_gmu_regread(device, A6XX_GPU_GMU_CX_GMU_RPMH_POWER_STATE, &reg);
 	kgsl_gmu_regread(device, A6XX_GMU_SPTPRAC_PWR_CLK_STATUS, &reg1);
 
@@ -2011,8 +2047,8 @@ static int a6xx_wait_for_lowest_idle(struct adreno_device *adreno_dev)
 		return 0;
 
 	ts3 = read_AO_counter(device);
-	WARN(1, "Timeout waiting for lowest idle: %08x %llx %llx %llx %x\n",
-		reg, ts1, ts2, ts3, reg1);
+	WARN(1, "Timeout waiting for lowest idle: %08x %llx %llx %llx %x %lx %lx %lx\n",
+		reg, ts1, ts2, ts3, reg1, t, start_jiffies, end_jiffies);
 
 	return -ETIMEDOUT;
 }
@@ -2306,6 +2342,9 @@ static int a6xx_rpmh_gpu_pwrctrl(struct adreno_device *adreno_dev,
 		ret = a6xx_gmu_suspend(device);
 		break;
 	case GMU_FW_STOP:
+		if (ADRENO_QUIRK(adreno_dev, ADRENO_QUIRK_HFI_USE_REG))
+			a6xx_oob_clear(adreno_dev,
+					OOB_BOOT_SLUMBER_CLEAR_MASK);
 		ret = a6xx_rpmh_power_off_gpu(device);
 		break;
 	case GMU_DCVS_NOHFI:

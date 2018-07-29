@@ -23,6 +23,7 @@
 #include <linux/page_ext.h>
 #include <linux/err.h>
 #include <linux/page_ref.h>
+#include <linux/overflow.h>
 
 struct mempolicy;
 struct anon_vma;

@@ -607,6 +607,7 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 		priv->disp_thread[i].crtc_id = priv->crtcs[i]->base.id;
 		kthread_init_worker(&priv->disp_thread[i].worker);
 		priv->disp_thread[i].dev = ddev;
+// TODO 			kthread_run_perf_critical(kthread_worker_fn,
 		priv->disp_thread[i].thread =
 			kthread_run(kthread_worker_fn,
 				&priv->disp_thread[i].worker,
@@ -626,6 +627,7 @@ static int msm_drm_init(struct device *dev, struct drm_driver *drv)
 		priv->event_thread[i].crtc_id = priv->crtcs[i]->base.id;
 		kthread_init_worker(&priv->event_thread[i].worker);
 		priv->event_thread[i].dev = ddev;
+// TODO 			kthread_run_perf_critical(kthread_worker_fn,
 		priv->event_thread[i].thread =
 			kthread_run(kthread_worker_fn,
 				&priv->event_thread[i].worker,

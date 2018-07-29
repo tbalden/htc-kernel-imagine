@@ -2804,7 +2804,7 @@ int __init amd_iommu_init_api(void)
 	for_each_possible_cpu(cpu) {
 		struct flush_queue *queue = per_cpu_ptr(&flush_queue, cpu);
 
-		queue->entries = kzalloc(FLUSH_QUEUE_SIZE *
+		queue->entries = kcalloc(FLUSH_QUEUE_SIZE,
 					 sizeof(*queue->entries),
 					 GFP_KERNEL);
 		if (!queue->entries)
@@ -3211,7 +3211,7 @@ static void amd_iommu_apply_dm_region(struct device *dev,
 	unsigned long start, end;
 
 	start = IOVA_PFN(region->start);
-	end   = IOVA_PFN(region->start + region->length);
+	end   = IOVA_PFN(region->start + region->length - 1);
 
 	WARN_ON_ONCE(reserve_iova(&dma_dom->iovad, start, end) == NULL);
 }

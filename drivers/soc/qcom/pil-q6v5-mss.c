@@ -259,11 +259,21 @@ static int modem_ramdump(int enable, const struct subsys_desc *subsys)
 	if (ret)
 		return ret;
 
+	ret = pil_mss_debug_reset(&drv->q6->desc);
+	if (ret)
+		return ret;
+
+	pil_mss_remove_proxy_votes(&drv->q6->desc);
+	ret = pil_mss_make_proxy_votes(&drv->q6->desc);
+	if (ret)
+		return ret;
+
 	ret = pil_mss_reset_load_mba(&drv->q6->desc);
 	if (ret)
 		return ret;
 
-	ret = pil_do_ramdump(&drv->q6->desc, drv->ramdump_dev);
+	ret = pil_do_ramdump(&drv->q6->desc,
+			drv->ramdump_dev, drv->minidump_dev);
 	if (ret < 0)
 		pr_err("Unable to dump modem fw memory (rc = %d).\n", ret);
 
@@ -275,21 +285,6 @@ static int modem_ramdump(int enable, const struct subsys_desc *subsys)
 	return ret;
 }
 
-static void modem_intr_handler_helper(struct modem_data *drv)
-{
-
-#if defined(CONFIG_HTC_DEBUG_SSR)
-	subsys_set_restart_reason(drv->subsys,
-		"Watchdog bite received from modem software!");
-#endif
-	if (drv->subsys_desc.system_debug &&
-			!gpio_get_value(drv->subsys_desc.err_fatal_gpio))
-		panic("%s: System ramdump requested. Triggering device restart!\n",
-							__func__);
-	subsys_set_crash_status(drv->subsys, CRASH_STATUS_WDOG_BITE);
-	restart_modem(drv);
-}
-
 static irqreturn_t modem_wdog_bite_intr_handler(int irq, void *dev_id)
 {
 	struct modem_data *drv = subsys_to_drv(dev_id);
@@ -298,19 +293,12 @@ static irqreturn_t modem_wdog_bite_intr_handler(int irq, void *dev_id)
 		return IRQ_HANDLED;
 
 	pr_err("Watchdog bite received from modem software!\n");
-	modem_intr_handler_helper(drv);
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t modem_periph_hang_intr_handler(int irq, void *dev_id)
-{
-	struct modem_data *drv = subsys_to_drv(dev_id);
-
-	if (drv->ignore_errors)
-		return IRQ_HANDLED;
-
-	pr_err("Modem hang detected by AOP!\n");
-	modem_intr_handler_helper(drv);
+	if (drv->subsys_desc.system_debug &&
+			!gpio_get_value(drv->subsys_desc.err_fatal_gpio))
+		panic("%s: System ramdump requested. Triggering device restart!\n",
+							__func__);
+	subsys_set_crash_status(drv->subsys, CRASH_STATUS_WDOG_BITE);
+	restart_modem(drv);
 	return IRQ_HANDLED;
 }
 
@@ -329,7 +317,6 @@ static int pil_subsys_init(struct modem_data *drv,
 	drv->subsys_desc.err_fatal_handler = modem_err_fatal_intr_handler;
 	drv->subsys_desc.stop_ack_handler = modem_stop_ack_intr_handler;
 	drv->subsys_desc.wdog_bite_handler = modem_wdog_bite_intr_handler;
-	drv->subsys_desc.periph_hang_handler = modem_periph_hang_intr_handler;
 
 	drv->q6->desc.modem_ssr = false;
 	drv->q6->desc.signal_aop = of_property_read_bool(pdev->dev.of_node,
@@ -361,9 +348,18 @@ static int pil_subsys_init(struct modem_data *drv,
 		ret = -ENOMEM;
 		goto err_ramdump;
 	}
+	drv->minidump_dev = create_ramdump_device("md_modem", &pdev->dev);
+	if (!drv->minidump_dev) {
+		pr_err("%s: Unable to create a modem minidump device.\n",
+			__func__);
+		ret = -ENOMEM;
+		goto err_minidump;
+	}
 
 	return 0;
 
+err_minidump:
+	destroy_ramdump_device(drv->ramdump_dev);
 err_ramdump:
 	subsys_unregister(drv->subsys);
 err_subsys:
@@ -537,6 +533,7 @@ static int pil_mss_driver_exit(struct platform_device *pdev)
 
 	subsys_unregister(drv->subsys);
 	destroy_ramdump_device(drv->ramdump_dev);
+	destroy_ramdump_device(drv->minidump_dev);
 	pil_desc_release(&drv->q6->desc);
 	return 0;
 }

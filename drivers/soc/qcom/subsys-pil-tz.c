@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -246,7 +246,7 @@ static int of_read_clocks(struct device *dev, struct clk ***clks_ref,
 		return -EINVAL;
 	}
 
-	clks = devm_kzalloc(dev, sizeof(struct clk *) * clk_count,
+	clks = devm_kcalloc(dev, clk_count, sizeof(struct clk *),
 				GFP_KERNEL);
 	if (!clks)
 		return -ENOMEM;
@@ -305,7 +305,7 @@ static int of_read_regs(struct device *dev, struct reg_info **regs_ref,
 		return -EINVAL;
 	}
 
-	regs = devm_kzalloc(dev, sizeof(struct reg_info) * reg_count,
+	regs = devm_kcalloc(dev, reg_count, sizeof(struct reg_info),
 				GFP_KERNEL);
 	if (!regs)
 		return -ENOMEM;
@@ -910,7 +910,7 @@ static int subsys_ramdump(int enable, const struct subsys_desc *subsys)
 	if (!enable)
 		return 0;
 
-	return pil_do_ramdump(&d->desc, d->ramdump_dev);
+	return pil_do_ramdump(&d->desc, d->ramdump_dev, NULL);
 }
 
 static void subsys_free_memory(const struct subsys_desc *subsys)
