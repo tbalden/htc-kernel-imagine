@@ -52,10 +52,10 @@ scm_version()
 
 			# If only the short version is requested, don't bother
 			# running further git commands
-			if $short; then
-				echo "+"
-				return
-			fi
+#			if $short; then
+#				echo "+"
+#				return
+#			fi
 			# If we are past a tagged commit (like
 			# "v2.6.30-rc5-302-g72357d5"), we pretty print it.
 			if atag="`git describe 2>/dev/null`"; then
@@ -76,9 +76,9 @@ scm_version()
 		[ -w . ] && git update-index --refresh --unmerged > /dev/null
 
 		# Check for uncommitted changes
-		if git diff-index --name-only HEAD | grep -qv "^scripts/package"; then
-			printf '%s' -dirty
-		fi
+#		if git diff-index --name-only HEAD | grep -qv "^scripts/package"; then
+#			printf '%s' -dirty
+#		fi
 
 		# All done with git
 		return
