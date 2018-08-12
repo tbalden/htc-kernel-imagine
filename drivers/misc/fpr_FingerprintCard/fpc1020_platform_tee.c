@@ -522,6 +522,7 @@ static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 #endif
 #if 1
 	int wake_enabled = 0;
+	pr_info("%s irq...\n",__func__);
 #endif
 
 #ifdef CONFIG_FPC_HTC_ENABLE_DBG
@@ -722,7 +723,7 @@ static int fpc1020_probe(struct platform_device *pdev)
 		(void)device_prepare(fpc1020, true);
 	}
 
-	rc = hw_reset(fpc1020);
+	//rc = hw_reset(fpc1020);
 
 	dev_info(dev, "%s: ok\n", __func__);
 

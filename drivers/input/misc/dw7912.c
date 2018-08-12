@@ -410,7 +410,10 @@ i2c_transfer_fail:
 	return rc;
 }
 
+
 #if 1
+extern void register_squeeze(unsigned long timestamp, int vibration);
+
 static void dw7912_haptics_off_work(struct work_struct *haptics_off_work)
 {
 	struct dw7912_priv *pDW = Gdw7912;
@@ -471,12 +474,20 @@ static void dw7912_haptics_work(struct work_struct *work)
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x0c, 0x01);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x01);
 			gprintk("%s\n", "on with pattern 4");
+#if 1
+			gprintk("%s\n", "squeeze: pattern 4 vibration... edge sense");
+			register_squeeze(jiffies, 1);
+#endif
 		} else if (pDW->vibTime == 410000) {
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x00);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x03, 0x01);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x0c, 0x01);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x01);
 			gprintk("%s\n", "on with pattern 4");
+#if 1
+			gprintk("%s\n", "squeeze: pattern 4 vibration... edge sense");
+			register_squeeze(jiffies, 1);
+#endif
 		} else if (pDW->vibTime == 500000) {
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x00);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x03, 0x01);

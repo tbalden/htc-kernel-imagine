@@ -40,6 +40,10 @@
 #include "bl.h"
 #include "spi.h"
 
+#if 1
+#include <linux/uci/uci.h>
+#endif
+
 /* HTC_START */
 #ifdef CONFIG_NANOHUB_HTC_LOG
 #include <linux/rtc.h>
@@ -142,6 +146,12 @@ static int nanohub_comms_app_from_host(struct nanohub_data *data,
 static int nanohub_get_log(struct nanohub_data *data);
 #ifdef CONFIG_NANOHUB_EDGE_ULTRA
 static int nanohub_get_temperature(void);
+#endif
+
+#if 1
+static int squeeze_sensitivity_boost = 0;
+static int squeeze_threshold = 299;
+static int key_sensitivity_threshold = 0;
 #endif
 
 #ifdef CONFIG_DRM
@@ -1061,6 +1071,36 @@ static ssize_t get_edge_threshold(struct device *dev, struct device_attribute *a
 	return scnprintf(buf, PAGE_SIZE, "edge_threshold = %u\n", data->edge_cfg.threshold);
 }
 
+#if 1
+extern void register_squeeze_power_threshold_change(int power);
+
+static void set_key_threshold(struct nanohub_data *data, uint32_t val) {
+	if (data==NULL) {
+		data = s_data;
+	}
+	pr_info("%s set value %d\n",__func__,val);
+	data->edge_ultra_cfg.threshold = val;
+
+	nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EDGE_ULTRA,
+			(uint8_t *)&data->edge_ultra_cfg, sizeof(struct edge_ultra_cfg_data));
+
+}
+static void set_squeeze_threshold(struct nanohub_data *data, uint32_t val) {
+	if (data==NULL) {
+		data = s_data;
+	}
+	pr_info("%s set value %d\n",__func__,val);
+	data->edge_cfg.threshold = val;
+
+    nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EDWK,
+            (uint8_t *)&data->edge_cfg, sizeof(struct edge_cfg_data));
+}
+
+#endif
+
+#if 1
+#define SQUEEZE_BOOST_DIV 4
+#endif
 static ssize_t set_edge_threshold(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -1074,17 +1114,28 @@ static ssize_t set_edge_threshold(struct device *dev,
 	}
 
 	pr_info("nanohub: edge_threshold = %u\n", val);
+#if 1
+	register_squeeze_power_threshold_change(val);
+	squeeze_threshold = val;
+	if (squeeze_sensitivity_boost) {
+		val = val / SQUEEZE_BOOST_DIV;
+	}
+#endif
 
     if(val == 0) {
         pr_info("edge_threshold should not be 0, return\n");
         return count;
     }
 
+#if 0
 	data->edge_cfg.threshold = val;
 
     nanohub_comms_write_cfg_data(data, SENS_TYPE_HTC_EDWK,
             (uint8_t *)&data->edge_cfg, sizeof(struct edge_cfg_data));
-
+#endif
+#if 1
+	set_squeeze_threshold(data,val);
+#endif
 	return count;
 }
 #endif
@@ -2691,6 +2742,12 @@ static bool nanohub_os_log(char *buffer, int len)
 	}
 }
 
+#if 1
+extern void register_squeeze_wake(int nanohub_flag, int vibrator_flag, unsigned long timestamp, int init_event_flag);
+
+static unsigned long edge_wake_jiffies = 0;
+#endif
+
 static void nanohub_process_buffer(struct nanohub_data *data,
 				   struct nanohub_buf **buf,
 				   int ret)
@@ -2699,6 +2756,9 @@ static void nanohub_process_buffer(struct nanohub_data *data,
 	uint8_t interrupt;
 	bool wakeup = false;
 	struct nanohub_io *io = &data->io[ID_NANOHUB_SENSOR];
+#if 1
+	unsigned int diff_jiffies;
+#endif
 
 	data->err_cnt = 0;
 	if (ret < 4 || nanohub_os_log((*buf)->buffer, ret)) {
@@ -2719,6 +2779,50 @@ static void nanohub_process_buffer(struct nanohub_data *data,
 	} else if (event_id == sensorGetMyEventType(SENS_TYPE_HTC_SECOND_DISP)) {
 		pr_info("nanohub: htc_second_disp triggered\n");
 	}
+#if 1
+	else if (event_id == sensorGetMyEventType(SENS_TYPE_HTC_EDGE)) {
+	} else if (event_id == sensorGetMyEventType(SENS_TYPE_HTC_EDWK)) {
+		pr_info("nanohub: htc_edge_wake triggered buffer size %d \n", (*buf)->length);
+#if 0
+		pr_info("%s nanohub: event_id: %d data "
+		    "%d %d %d" 		    "%d %d %d"		    "%d %d %d" 		    "%d %d %d" 		    "%d %d %d" 		    "%d %d %d" 		    "%d %d %d" 
+		    "%d %d %d" 		    "%d %d %d" 		    "%d %d %d"		    "%d %d %d" 		    "%d %d %d" 		    "%d %d %d" 		    "%d %d %d" 
+		    "%d %d %d" 		    "%d %d %d"
+		    "\n",__func__, event_id, 
+		    (*buf)->buffer[0], (*buf)->buffer[1], (*buf)->buffer[2],		    (*buf)->buffer[3], (*buf)->buffer[4], (*buf)->buffer[5],
+		    (*buf)->buffer[6], (*buf)->buffer[7], (*buf)->buffer[8],		    (*buf)->buffer[9], (*buf)->buffer[10], (*buf)->buffer[11],
+		    (*buf)->buffer[12], (*buf)->buffer[13], (*buf)->buffer[14],		    (*buf)->buffer[15], (*buf)->buffer[16], (*buf)->buffer[17],
+		    (*buf)->buffer[18], (*buf)->buffer[19], (*buf)->buffer[20],		    (*buf)->buffer[21], (*buf)->buffer[22], (*buf)->buffer[23],
+		    (*buf)->buffer[24], (*buf)->buffer[25], (*buf)->buffer[26],		    (*buf)->buffer[27], (*buf)->buffer[28], (*buf)->buffer[29],
+		    (*buf)->buffer[30], (*buf)->buffer[31], (*buf)->buffer[32],		    (*buf)->buffer[33], (*buf)->buffer[34], (*buf)->buffer[35],
+		    (*buf)->buffer[36], (*buf)->buffer[37], (*buf)->buffer[38],		    (*buf)->buffer[39], (*buf)->buffer[40], (*buf)->buffer[41],
+		    (*buf)->buffer[42], (*buf)->buffer[43], (*buf)->buffer[44],		    (*buf)->buffer[45], (*buf)->buffer[46], (*buf)->buffer[47] 
+		    );
+#endif
+		if ( (*buf)->buffer[18] == 128 ) {
+			// edge wake init event
+			edge_wake_jiffies = jiffies;
+			pr_info("nanohub: squeeze htc_edge_wake triggered INIT ++\n");
+			register_squeeze_wake(1,0,jiffies,1);
+		} else 
+		if ( (*buf)->buffer[18] == 0 ) {
+			// edge wake finished event
+			diff_jiffies = jiffies - edge_wake_jiffies;
+			edge_wake_jiffies = 0;
+			pr_info("nanohub: squeeze htc_edge_wake triggered INIT diff jiffies = %u--\n", diff_jiffies);
+			register_squeeze_wake(1,0,jiffies,0);
+#if 0
+// this part could be used if nanohub events were consistent. But they're not, sometimes events get lost
+// so instead register_squeeze_wake is used above, to gather information about nanohub events and 
+// help detection through user wakelock / vibration detection there, and not check timing here...
+			if (diff_jiffies <= 45) {
+				pr_info("nanohub: squeeze_wake event !\n");
+				register_squeeze_wake(1,0,jiffies,0);
+			}
+#endif
+		}
+	}
+#endif
 /* HTC_END */
 
 	if (ret >= sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint32_t) &&
@@ -3151,6 +3255,16 @@ static void nanohub_release_gpios_irqs(struct nanohub_data *data)
 		gpio_free(pdata->handshaking_gpio);
 /* HTC_END */
 }
+#if 1
+// registered user uci listener
+static void uci_user_listener(void) {
+        pr_info("%s [CLEANSLATE] user listener... \n",__func__);
+	squeeze_sensitivity_boost = uci_get_user_property_int_mm("squeeze_sensitivity_boost", 0, 0, 1);
+	key_sensitivity_threshold = uci_get_user_property_int_mm("key_sensitivity_threshold", 0, 0, 1000);
+	set_squeeze_threshold(s_data,squeeze_sensitivity_boost?squeeze_threshold/SQUEEZE_BOOST_DIV:squeeze_threshold);
+	set_key_threshold(s_data,key_sensitivity_threshold);
+}
+#endif
 
 struct iio_dev *nanohub_probe(struct device *dev, struct iio_dev *iio_dev)
 {
@@ -3331,6 +3445,9 @@ struct iio_dev *nanohub_probe(struct device *dev, struct iio_dev *iio_dev)
 #endif
 
 	s_data = data;
+#if 1
+	uci_add_user_listener(uci_user_listener);
+#endif
 #ifdef CONFIG_NANOHUB_EDGE_ULTRA
 	queue_delayed_work(data->wq, &data->work_temperature, 0);
 #endif
