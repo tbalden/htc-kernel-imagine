@@ -122,6 +122,9 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
     int ret = 0;
     char drop_buf_flag = '1';
     PRINT_INFO("%s: code: %lu\n", __func__, code);
+#if 1
+    pr_info("%s: code: %lu   power_off_setting: %d   pwer off freq l: %d h: %d \n", __func__, code, power_off_setting, power_off_freq_l, power_off_freq_h);
+#endif
 
     nanohub_set_drop_buf_flag(&drop_buf_flag, sizeof(char));
 
@@ -134,6 +137,9 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
         case POWER_OFF_FIXED_RATE:
             snt8100fsr_g->frame_rate = power_off_freq_l;
             PRINT_INFO("Setting frame rate to: %dHz", snt8100fsr_g->frame_rate);
+#if 1
+            pr_inf("%s Setting frame rate to: %dHz", __func__, snt8100fsr_g->frame_rate);
+#endif
             if (write_register(snt8100fsr_g,
                                REGISTER_FRAME_RATE,
                                &snt8100fsr_g->frame_rate)) {

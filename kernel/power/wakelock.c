@@ -195,6 +195,10 @@ static struct wakelock *wakelock_lookup_add(const char *name, size_t len,
 	return wl;
 }
 
+#if 1
+extern void register_squeeze(unsigned long timestamp, int vibration);
+#endif
+
 int pm_wake_lock(const char *buf)
 {
 	const char *str = buf;
@@ -222,6 +226,17 @@ int pm_wake_lock(const char *buf)
 
 	mutex_lock(&wakelocks_lock);
 
+#if 1
+	// detect SensorService_wakelock addition, as it helps to catch
+	// edge sense Squeeze sensor events surging from userspace.
+	// this was added because Nanohub driver kernel space is not
+	// reliable enough, and nanohub driver kthread method does not 
+	// receive all events for parsing.
+	if (strncmp("SensorService_wakelock", buf, len)==0) {
+		pr_info("%s lock user wakelock data %s\n",__func__,buf);
+		register_squeeze(jiffies,0);
+	}
+#endif
 	wl = wakelock_lookup_add(buf, len, true);
 	if (IS_ERR(wl)) {
 		ret = PTR_ERR(wl);
