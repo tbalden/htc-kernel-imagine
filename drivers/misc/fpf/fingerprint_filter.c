@@ -1873,7 +1873,7 @@ static void squeeze_swipe_short_trigger(void) {
 
 
 
-#define MAX_SQUEEZE_TIME 35 * JIFFY_MUL
+#define MAX_SQUEEZE_TIME 34 * JIFFY_MUL // U12 change 35->34
 #define MAX_SQUEEZE_TIME_LONG 69 * JIFFY_MUL
 #define MAX_NANOHUB_EVENT_TIME 4 * JIFFY_MUL
 static unsigned long longcount_start = 0;
