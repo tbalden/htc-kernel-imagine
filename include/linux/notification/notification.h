@@ -33,6 +33,8 @@ enum notif_led_type {
 #define NTF_EVENT_WAKE_EARLY "wake_early"
 #define NTF_EVENT_SLEEP_EARLY "sleep_early"
 #define NTF_EVENT_SLEEP "sleep"
+#define NTF_EVENT_PROXIMITY "proximity"
+#define NTF_EVENT_LOCKED "locked"
 
 #define NTF_EVENT_NOTIFICATION_ARG_HAPTIC "haptic"
 
@@ -43,6 +45,8 @@ enum notif_led_type {
 // op6
 #define MIN_TD_VALUE_OP6_SILENT_MODE 300
 #define MIN_TD_VALUE_OP6_FORCED_FP 250
+// u12
+#define TD_VALUE_HTC_U12_FINGERPRINT 40
 
 extern void smart_set_last_user_activity_time(void);
 extern int smart_get_notification_level(int notif_type);
@@ -56,6 +60,7 @@ extern bool ntf_is_screen_early_off(void);
 extern void ntf_set_charge_state(bool on);
 extern void ntf_set_charge_level(int level);
 extern bool ntf_is_charging(void);
+extern bool ntf_is_in_call(void);
 
 // flashlight
 extern void ntf_set_cam_flashlight(bool on);
