@@ -138,7 +138,7 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
             snt8100fsr_g->frame_rate = power_off_freq_l;
             PRINT_INFO("Setting frame rate to: %dHz", snt8100fsr_g->frame_rate);
 #if 1
-            pr_inf("%s Setting frame rate to: %dHz", __func__, snt8100fsr_g->frame_rate);
+            pr_info("%s Setting frame rate to: %dHz", __func__, snt8100fsr_g->frame_rate);
 #endif
             if (write_register(snt8100fsr_g,
                                REGISTER_FRAME_RATE,
