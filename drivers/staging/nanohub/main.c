@@ -1099,7 +1099,7 @@ static void set_squeeze_threshold(struct nanohub_data *data, uint32_t val) {
 #endif
 
 #if 1
-#define SQUEEZE_BOOST_DIV 4
+#define SQUEEZE_BOOST_DIV 12
 #endif
 static ssize_t set_edge_threshold(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
