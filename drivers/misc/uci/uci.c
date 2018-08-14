@@ -462,7 +462,7 @@ EXPORT_SYMBOL(uci_get_sys_property_str);
 int uci_get_sys_property_int(const char* property, int default_value) {
 	const char* str = uci_get_sys_property_str(property, 0);
 	long int ret = 0;
-	pr_info("%s uci %s str = %s\n",__func__, property, str?str:"NULL");
+	//pr_info("%s uci %s str = %s\n",__func__, property, str?str:"NULL");
 	if (!str) return default_value;
         if (kstrtol(str, 10, &ret) < 0)
                 return -EINVAL;
@@ -473,7 +473,7 @@ EXPORT_SYMBOL(uci_get_sys_property_int);
 int uci_get_sys_property_int_mm(const char* property, int default_value, int min, int max) {
 	int ret = uci_get_sys_property_int(property, default_value);
 	if (ret<min || ret>max) ret = default_value;
-	pr_info("%s uci get sys prop %s = %d\n",__func__, property, ret);
+	//pr_info("%s uci get sys prop %s = %d\n",__func__, property, ret);
 	return ret;
 }
 EXPORT_SYMBOL(uci_get_sys_property_int_mm);
