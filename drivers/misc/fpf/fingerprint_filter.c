@@ -1873,7 +1873,7 @@ static void squeeze_swipe_short_trigger(void) {
 
 
 
-#define MAX_SQUEEZE_TIME 34 * JIFFY_MUL // U12 change 35->34
+#define MAX_SQUEEZE_TIME 38 * JIFFY_MUL // U12 change 35->38
 #define MAX_SQUEEZE_TIME_LONG 69 * JIFFY_MUL
 #define MAX_NANOHUB_EVENT_TIME 4 * JIFFY_MUL
 static unsigned long longcount_start = 0;
@@ -2082,14 +2082,26 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 			}
 			return;
 		}
+#if 1 
+// htc u12 special vibration pattern call is sure to be of edge squeeze!
+		if (!screen_on && vibration) {
+			pr_info("%s squeeze call -- vibration in INIT phase, skipping to next stage, setting last squeeze timestamp... : %d\n",__func__,stage);
+			// skip to wakelock stage right now
+			stage = STAGE_FIRST_WL;
+			last_squeeze_timestamp = jiffies;
+		} else {
+#endif
 		pr_info("%s squeeze call -- END STAGE : %d\n",__func__,stage);
 		return;
+#if 1
+		}
+#endif
 	}
 	diff = jiffies - last_squeeze_timestamp;
 	pr_info("%s squeeze call ++ squeeze diff : %u\n",__func__,diff);
 
 	if (stage == STAGE_FIRST_WL) {
-		if (vibration && diff <= 5 * JIFFY_MUL) {
+		if (vibration && diff <= 15 * JIFFY_MUL) { // changing 5 -> 15 on u12+, wake can be slower before vibration is actually done after wakelock...
 
 			// if screen is off and nanohub edge wake event detected recently, trigger power button here..
 			if (!screen_on && nanohub_diff < MAX_NANOHUB_EVENT_TIME) {
@@ -2128,7 +2140,11 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 
 			stage = STAGE_VIB;
 			// start longcount trigger
-			longcount_start = last_squeeze_timestamp;
+//			longcount_start = last_squeeze_timestamp;
+			longcount_start = jiffies;  // start fresh timestamp instead of using the Wakelock/Nanohub based detection stage - vibration triggering is the real good timing source...
+
+			last_squeeze_timestamp = jiffies; // reset counting of time again at this point to be more precise after haptic feedback
+
 			if (get_squeeze_swipe() && !swipe_longcount_finished) {
 				// in swipe mode first vibration should stop swipe longcount, because the start of the squeeze should stop 
 				// so that while a middle long gesture goes on, it won't finish with swipe_longcount_finished == 1 output, that would prevent direction change, and go
