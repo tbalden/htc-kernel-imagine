@@ -1319,8 +1319,9 @@ static void swipe_longcount(struct work_struct * swipe_longcount_work) {
 		if (jiffies - swipe_longcount_start > SWIPE_ACCELERATED_TIME_LIMIT) {
 			pr_info("%s ######## squeeze call || swipe_longcount VIBRATION !! \n",__func__);
 			swipe_longcount_finished = 1;
-			if (get_squeeze_swipe_vibration() && screen_on) {
-				set_vibrate(1);
+			if (get_squeeze_swipe_vibration() && screen_on && get_squeeze_sleep()) {
+				//set_vibrate(20);
+				set_vibrate(300000); // clickety vibration special value on u12+
 			}
 			return;
 		}
@@ -1873,7 +1874,7 @@ static void squeeze_swipe_short_trigger(void) {
 
 
 
-#define MAX_SQUEEZE_TIME 38 * JIFFY_MUL // U12 change 35->38
+#define MAX_SQUEEZE_TIME 35 * JIFFY_MUL // U12 change 35->38
 #define MAX_SQUEEZE_TIME_LONG 69 * JIFFY_MUL
 #define MAX_NANOHUB_EVENT_TIME 4 * JIFFY_MUL
 static unsigned long longcount_start = 0;
