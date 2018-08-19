@@ -1119,6 +1119,7 @@ static ssize_t set_edge_threshold(struct device *dev,
 	squeeze_threshold = val;
 	if (squeeze_sensitivity_boost) {
 		val = val / SQUEEZE_BOOST_DIV;
+		val = val - 25;
 	}
 #endif
 
