@@ -585,6 +585,8 @@ static void flash_start_blink_work_func(struct work_struct *work)
 	}
 }
 
+static bool flash_start_queued = false;
+
 static void flash_stop_blink_work_func(struct work_struct *work)
 {
 #ifdef LOCKING
@@ -604,8 +606,9 @@ exit:
 	spin_unlock(&blink_spinlock);
 //	mutex_unlock(&flash_blink_lock);
 #endif
-	return;
+	flash_start_queued = false; // reset flag, no more stop work start needed for now...
 }
+
 
 void flash_blink(bool haptic) {
 	pr_info("%s [flashwake] flash_blink\n",__func__);
@@ -621,6 +624,7 @@ void flash_blink(bool haptic) {
 	if (!init_done) return;
 
 	pr_info("%s start blink queue work...\n",__func__);
+	flash_start_queued = true;
 	queue_work(flash_start_blink_workqueue, &flash_start_blink_work);
 }
 EXPORT_SYMBOL(flash_blink);
@@ -694,8 +698,10 @@ void flash_stop_blink(void) {
 //	pr_info("%s flash_blink\n",__func__);
 	if (!init_done) return;
 	if (ntf_ringing) return; // screen on/user input shouldn't stop ringing triggered flashing!
-	pr_info("%s [flashwake] stop blink queue work...\n",__func__);
-	queue_work(flash_stop_blink_workqueue, &flash_stop_blink_work);
+	if (flash_start_queued) {
+		pr_info("%s [flashwake] stop blink queue work...\n",__func__);
+		queue_work(flash_stop_blink_workqueue, &flash_stop_blink_work);
+	}
 }
 EXPORT_SYMBOL(flash_stop_blink);
 
@@ -725,6 +731,11 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 	}
 	if (!strcmp(event,NTF_EVENT_WAKE_BY_USER)) {
 		flash_stop_blink();
+	}
+	if (!strcmp(event,NTF_EVENT_INPUT)) {
+		if (ntf_wake_by_user()) {
+			flash_stop_blink();
+		}
 	}
 	if (!strcmp(event,NTF_EVENT_RINGING)) {
 		if (num_param) {
