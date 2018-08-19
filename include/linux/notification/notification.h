@@ -70,6 +70,8 @@ extern void ntf_vibration(int val);
 extern void ntf_led_blink(enum notif_led_type led, bool on);
 // led off - possibly notification over...
 extern void ntf_led_off(void);
+// call this signal when kad is before waking screen.
+extern void ntf_kad_wake(void);
 
 // AOD
 extern void ntf_screen_aod_on(void);
