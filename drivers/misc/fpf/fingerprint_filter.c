@@ -2858,7 +2858,14 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
         if (!strcmp(event,NTF_EVENT_LOCKED)) {
 		if (!num_param) { // unlocked... probably fingerprint...
 			if (screen_on) {
-				register_fp_vibration();
+				pr_info("%s kad unlocked: Stop KAD!\n",__func__);
+				squeeze_peek_wait = 0;
+				stop_kad_running(true,__func__);
+				if (init_done) {
+					alarm_cancel(&kad_repeat_rtc);
+				}
+				register_input_event(__func__); // this is unlocking screen, register it as intentional input event... to stop other stuff in other drivers like flashlight
+			//	register_fp_vibration();
 			}
 		}
         } else
