@@ -33,6 +33,9 @@ enum notif_led_type {
 #define NTF_EVENT_WAKE_EARLY "wake_early"
 #define NTF_EVENT_SLEEP_EARLY "sleep_early"
 #define NTF_EVENT_SLEEP "sleep"
+#define NTF_EVENT_PROXIMITY "proximity"
+#define NTF_EVENT_LOCKED "locked"
+#define NTF_EVENT_CAMERA_ON "camera"
 
 #define NTF_EVENT_NOTIFICATION_ARG_HAPTIC "haptic"
 
@@ -72,6 +75,10 @@ extern void ntf_led_blink(enum notif_led_type led, bool on);
 extern void ntf_led_off(void);
 // call this signal when kad is before waking screen.
 extern void ntf_kad_wake(void);
+// camera on/off, to avoid display of KAD or other ntf services
+extern void ntf_camera_started(void);
+extern void ntf_camera_stopped(void);
+
 
 // AOD
 extern void ntf_screen_aod_on(void);

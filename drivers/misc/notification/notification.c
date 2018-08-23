@@ -386,6 +386,17 @@ void ntf_led_off(void) {
 	ntf_notify_listeners(NTF_EVENT_NOTIFICATION,0,"off");
 }
 
+void ntf_camera_started(void) {
+	ntf_notify_listeners(NTF_EVENT_CAMERA_ON,1,"on");
+}
+EXPORT_SYMBOL(ntf_camera_started);
+
+void ntf_camera_stopped(void) {
+	ntf_notify_listeners(NTF_EVENT_CAMERA_ON,0,"off");
+}
+EXPORT_SYMBOL(ntf_camera_stopped);
+
+
 static int last_notification_number = 0;
 // registered sys uci listener
 static void uci_sys_listener(void) {

@@ -20,6 +20,9 @@
 /*HTC_START*/
 #include "lc898123F40_htc.h"
 /*HTC_END*/
+#ifdef CONFIG_UCI_NOTIFICATIONS
+#include <linux/notification/notification.h>
+#endif
 
 /* HTC_START */
 static struct cam_sensor_ctrl_t *g_maincam_imx351_ctrl = NULL;
@@ -1076,6 +1079,9 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 		CAM_ERR(CAM_SENSOR, "power up the core is failed:%d", rc);
 		return rc;
 	}
+#ifdef CONFIG_UCI_NOTIFICATIONS
+	ntf_camera_started();
+#endif
 
 /* HTC_START */
 	CAM_INFO(CAM_SENSOR, "[DualCam] sensor_id : 0x%x , sensor_slave_addr : 0x%x",
@@ -1126,6 +1132,9 @@ int cam_sensor_power_down(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+#ifdef CONFIG_UCI_NOTIFICATIONS
+	ntf_camera_stopped();
+#endif
 /* HTC_START */
 	if (s_ctrl->sensordata->slave_info.sensor_id == 0x0333 || s_ctrl->sensordata->slave_info.sensor_id == 0x0363) {
 		g_maincam_imx363_ctrl = NULL;

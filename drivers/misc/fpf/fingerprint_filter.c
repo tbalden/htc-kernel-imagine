@@ -2831,6 +2831,14 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
                 pr_info("%s fpf ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
         }
 
+	if (!strcmp(event,NTF_EVENT_CAMERA_ON)) {
+		if (!!num_param) {
+			// camera on.. if KAD running, stop it, display is camera app!
+			if (screen_on && kad_running) {
+				interrupt_kad_peekmode_wait = 1; // interrupt KAD
+			}
+		}
+	} else
 	if (!strcmp(event,NTF_EVENT_WAKE_EARLY)) {
 		screen_on = 1;
 		screen_off_early = 0;
