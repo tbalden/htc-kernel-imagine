@@ -171,6 +171,24 @@ void sde_setup_dspp_igcv3(struct sde_hw_dspp *ctx, void *cfg)
 	SDE_REG_WRITE(&ctx->hw, IGC_OPMODE_OFF, IGC_EN);
 }
 
+#if 1
+static bool override = false;
+static int stored_sat = 0;
+static int stored_val = 0;
+static int stored_cont = 0;
+//static int stored_r = 0;
+//static int stored_g = 0;
+//static int stored_b = 0;
+//static int stored_enable = 0;
+
+extern void kcal_force_update(void);
+
+static bool first_init = true;
+static void uci_user_listener(void) {
+	kcal_force_update();
+}
+#endif
+
 void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 {
 	struct sde_hw_cp_cfg *hw_cfg = cfg;
@@ -182,6 +200,10 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 	int enable = 0, r=255,g=255,b=255, min = 20;
 	int sat=255, hue=0, cont=255, val = 255;
 	u32 opcode = 0, local_opcode = 0;
+	if (first_init) {
+		uci_add_user_listener(uci_user_listener);
+		first_init = false;
+	}
 #endif
 
 	if (!ctx || !cfg) {
@@ -327,3 +349,48 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 
 	SDE_REG_WRITE(&ctx->hw, ctx->cap->sblk->pcc.base, PCC_EN);
 }
+
+#if 1
+
+//#define KCAL_RGB
+
+DEFINE_MUTEX(kcal_int_lock);
+
+
+int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b)
+{
+	if (!mutex_trylock(&kcal_int_lock)) {
+		pr_info("%s kad unable to lock\n",__func__);
+		return 0;
+	}
+	{
+		pr_info("%s kad lock ### override kcal rgb: sat %d val %d cont %d | r %d g %d b %d\n",__func__, kcal_sat, kcal_val, kcal_cont, r,g,b);
+		stored_sat = kcal_sat;
+		stored_val = kcal_val;
+		stored_cont = kcal_cont;
+		override = true;
+	}
+	mutex_unlock(&kcal_int_lock);
+	return 1;
+}
+EXPORT_SYMBOL(kcal_internal_override);
+void kcal_internal_backup(void)
+{
+}
+EXPORT_SYMBOL(kcal_internal_backup);
+int kcal_internal_restore(void)
+{
+	if (!mutex_trylock(&kcal_int_lock)) {
+		pr_info("%s kad unable to lock\n",__func__);
+		return 0;
+	}
+	override = false;
+
+	kcal_force_update();
+
+	mutex_unlock(&kcal_int_lock);
+	return 1;
+}
+EXPORT_SYMBOL(kcal_internal_restore);
+
+#endif

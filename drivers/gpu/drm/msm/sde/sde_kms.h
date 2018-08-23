@@ -42,6 +42,7 @@
 
 #define DRMID(x) ((x) ? (x)->base.id : -1)
 
+
 /**
  * SDE_DEBUG - macro for kms/plane/crtc/encoder/connector logs
  * @fmt: Pointer to format string
