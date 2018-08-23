@@ -1231,7 +1231,7 @@ static void start_kad_running(int for_squeeze) {
 	pr_info("%s === ----------- start kad running --------- ==\n", __func__);
 	kad_running = 1;
 	kad_running_for_kcal_only = for_squeeze;
-	pr_info("%s kad\n",__func__);
+	pr_info("%s kad - for squeeze: %d \n",__func__, for_squeeze);
 	if (is_screen_locked()) {
 		if ((is_kad_on()&&get_kad_kcal())||(for_squeeze&&is_squeeze_peek_kcal(true))) {
 			schedule_work(&kcal_set_work);//kcal_internal_override_sat(128);
@@ -2835,7 +2835,12 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		if (!!num_param) {
 			// camera on.. if KAD running, stop it, display is camera app!
 			if (screen_on && kad_running) {
-				interrupt_kad_peekmode_wait = 1; // interrupt KAD
+				if (kad_running_for_kcal_only) {
+					squeeze_peek_wait = 0;
+					stop_kad_running(true,__func__);
+				} else {
+					interrupt_kad_peekmode_wait = 1; // interrupt KAD
+				}
 			}
 		}
 	} else
