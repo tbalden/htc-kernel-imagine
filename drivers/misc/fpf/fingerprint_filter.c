@@ -1297,6 +1297,7 @@ static int get_squeeze_swipe_vibration(void) {
 // members...
 static int squeeze_swipe_dir = 1;
 int last_mt_slot = 0;
+int last_emulated_mt_slot = 0;
 int highest_mt_slot = 0;
 int pseudo_rnd = 0;
 
@@ -1479,8 +1480,8 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 #ifdef CONFIG_FPF_TS_PRESSURE
 				ts_track_event_gather(EV_ABS, ABS_MT_PRESSURE, 70+ (pseudo_rnd%2));
 #else
-				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MAJOR, 10+ (pseudo_rnd%2));
-				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MINOR, 7+ (pseudo_rnd%2));
+				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MAJOR, 3+ (pseudo_rnd%2));
+				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MINOR, 3+ (pseudo_rnd%2));
 #endif
 				ts_track_event_gather(EV_SYN, 0, 0);
 				ts_track_event_run();
@@ -1634,7 +1635,7 @@ END ALL
 */
 static void ts_scroll_emulate(int down, int full) {
 
-	int local_slot = last_mt_slot;
+	int local_slot = last_emulated_mt_slot;
 	int y_diff;
 	int y_delta;
 	int y_steps; // tune this for optimal page size of scrolling
@@ -1649,6 +1650,12 @@ static void ts_scroll_emulate(int down, int full) {
 	if (!mutex_trylock(&squeeze_swipe_lock)) {
 		return;
 	}
+	if (last_emulated_mt_slot>1) {
+		last_emulated_mt_slot--;
+	} else {
+		last_emulated_mt_slot = last_mt_slot - 1;
+	}
+
 	ts_emulated_events_in_progress = 0;
 
 	// if last scroll close enough, double round of swipe, if it's intended to be a full swipe...
@@ -1713,6 +1720,13 @@ static void ts_scroll_emulate(int down, int full) {
 
 		// TODO how to determine portrait/landscape mode? currently only portrait
 
+#if 1
+		// to avoid skips, make X times larger steps...
+		y_steps = y_steps / 2;
+		y_delta = y_delta * 2;
+		swipe_step_wait_time_mul = swipe_step_wait_time_mul * 2;
+#endif
+
 		if (screen_on) {
 			int empty_check_count = 0;
 			int first_steps = 1;
@@ -1736,14 +1750,14 @@ static void ts_scroll_emulate(int down, int full) {
 					}
 					ts_track_event_clear(false);
 				}
-				ts_track_event_gather(EV_ABS, ABS_MT_POSITION_X, 800+ (pseudo_rnd++)%2);
+				ts_track_event_gather(EV_ABS, ABS_MT_POSITION_X, 800+ (pseudo_rnd++)%6);
 				ts_track_event_gather(EV_ABS, ABS_MT_POSITION_Y, 1000+y_diff);
 				y_diff += y_delta;
 #ifdef CONFIG_FPF_TS_PRESSURE
 				ts_track_event_gather(EV_ABS, ABS_MT_PRESSURE, 70+ (pseudo_rnd%2));
 #else
-				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MAJOR, 10+ (pseudo_rnd%2));
-				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MINOR, 7+ (pseudo_rnd%2));
+				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MAJOR, 3+ (pseudo_rnd%2));
+				ts_track_event_gather(EV_ABS, ABS_MT_TOUCH_MINOR, 3+ (pseudo_rnd%2));
 #endif
 				ts_track_event_gather(EV_SYN, 0, 0);
 				ts_track_event_run();
@@ -1753,7 +1767,10 @@ static void ts_scroll_emulate(int down, int full) {
 				}
 				while(!ts_track_event_complete(false)) {
 					diff_time = jiffies - start_time;
-					if (diff_time>30*JIFFY_MUL) break;
+					if (diff_time>4*JIFFY_MUL) {
+						pr_info("%s breaking incomplete check cycle ts_check\n",__func__);
+						break;
+					}
 					msleep(1);
 				}
 			}
@@ -2504,10 +2521,10 @@ static bool ts_input_filter(struct input_handle *handle,
 	}
 #ifdef LOG_INPUT_EVENTS
 	if (type == EV_ABS) {
-		pr_info("%s _____ ts_input abs %d %d %d\n",__func__,type,code,value);
+		pr_info("%s _____ ts_input log_abs %d %d %d\n",__func__,type,code,value);
 	}
 	if (type == EV_SYN) {
-		pr_info("%s _____ ts_input syn %d %d %d\n",__func__,type,code,value);
+		pr_info("%s _____ ts_input log_syn %d %d %d\n",__func__,type,code,value);
 	}
 #endif
 
@@ -2575,6 +2592,7 @@ static bool ts_input_filter(struct input_handle *handle,
 		// only overwrite last_mt_slot when not in emulation! otherwise order will be confused on userspace
 		if (type == EV_ABS && code == ABS_MT_TRACKING_ID && value!=-1) {
 			last_mt_slot = value;
+			last_emulated_mt_slot = value;
 		}
 		check_ts_current_map(type,code,value); // we still need to continue emptying the map, to keep blocking other events, meanwhile squeeze scrolling...
 
