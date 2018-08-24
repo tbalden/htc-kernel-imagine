@@ -711,7 +711,13 @@ int cam_vfe_process_cmd(void *hw_priv, uint32_t cmd_type,
 		break;
 
 	default:
+/* HTC_START */
+#if 0
 		CAM_ERR(CAM_ISP, "Invalid cmd type:%d", cmd_type);
+#else
+		CAM_INFO(CAM_ISP, "Invalid cmd type:%d", cmd_type);
+#endif
+/* HTC_END */
 		rc = -EINVAL;
 		break;
 	}

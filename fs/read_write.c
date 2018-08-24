@@ -541,6 +541,7 @@ ssize_t __kernel_write(struct file *file, const char *buf, size_t count, loff_t 
 
 EXPORT_SYMBOL(__kernel_write);
 
+extern atomic_t k_power_off;
 ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
 	ssize_t ret;
@@ -552,6 +553,12 @@ ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_
 	if (unlikely(!access_ok(VERIFY_READ, buf, count)))
 		return -EFAULT;
 
+	if (atomic_read(&k_power_off)) {
+		printk_ratelimited(KERN_WARNING "VFS reject write: %s pid:%d(%s)(parent:%d/%s) file %s count %lu\n", __func__,
+		current->pid, current->comm, current->parent->pid,
+		current->parent->comm, file->f_path.dentry->d_name.name, (unsigned long) count);
+		return -EROFS;
+	}
 	ret = rw_verify_area(WRITE, file, pos, count);
 	if (!ret) {
 		if (count > MAX_RW_COUNT)

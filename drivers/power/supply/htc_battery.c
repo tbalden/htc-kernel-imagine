@@ -1968,6 +1968,15 @@ int htc_batt_schedule_batt_info_update(void)
 	if (!g_htc_battery_probe_done)
 		return 1;
 
+	if (((jiffies - htc_batt_timer.batt_system_jiffies) * MSEC_PER_SEC / HZ) > 300000) {
+		BATT_DEBUG("%s: total_time since last batt update over 300s.\n", __func__);
+		if (work_pending(&htc_batt_timer.batt_work)) {
+			BATT_DEBUG("%s: cancel batt_work.\n", __func__);
+			cancel_work_sync(&htc_batt_timer.batt_work);
+			__pm_relax(htc_batt_timer.battery_lock);
+		}
+	}
+
 	if (!work_pending(&htc_batt_timer.batt_work)) {
 			__pm_stay_awake(htc_batt_timer.battery_lock);
 			queue_work(htc_batt_timer.batt_wq, &htc_batt_timer.batt_work);

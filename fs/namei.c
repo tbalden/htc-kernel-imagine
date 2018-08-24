@@ -2309,11 +2309,19 @@ static int path_lookupat(struct nameidata *nd, unsigned flags, struct path *path
 	return err;
 }
 
+extern atomic_t k_power_off;
 static int filename_lookup(int dfd, struct filename *name, unsigned flags,
 			   struct path *path, struct path *root)
 {
 	int retval;
 	struct nameidata nd;
+	if (atomic_read(&k_power_off)) {
+		printk_ratelimited(KERN_WARNING "VFS reject filename_lookup: %s pid:%d(%s)(parent:%d/%s)\n", __func__,
+		current->pid, current->comm, current->parent->pid,
+		current->parent->comm);
+		return -EROFS;
+	}
+
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 	if (unlikely(root)) {
@@ -4050,6 +4058,12 @@ int vfs_unlink2(struct vfsmount *mnt, struct inode *dir, struct dentry *dentry, 
 	if (!dir->i_op->unlink)
 		return -EPERM;
 
+	if (atomic_read(&k_power_off)) {
+		printk_ratelimited(KERN_WARNING "VFS reject unlink: %s pid:%d(%s)(parent:%d/%s) file %s\n", __func__,
+		current->pid, current->comm, current->parent->pid, current->parent->comm, dentry->d_name.name);
+		return -EROFS;
+	}
+
 	inode_lock(target);
 	if (is_local_mountpoint(dentry))
 		error = -EBUSY;
@@ -4496,6 +4510,13 @@ int vfs_rename2(struct vfsmount *mnt,
 
 	if (!old_dir->i_op->rename)
 		return -EPERM;
+
+	if (atomic_read(&k_power_off)) {
+		printk_ratelimited(KERN_WARNING "VFS reject rename: %s pid:%d(%s)(parent:%d/%s) old_file %s new_file %s\n",
+		__func__, current->pid, current->comm, current->parent->pid, current->parent->comm,
+		old_dentry->d_name.name, new_dentry->d_name.name);
+		return -EROFS;
+	}
 
 	/*
 	 * If we are going to change the parent - check write permissions,

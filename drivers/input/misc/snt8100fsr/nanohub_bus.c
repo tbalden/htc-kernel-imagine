@@ -162,9 +162,8 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
                                                POWER_OFF_TRANS_TIMEOUT)) {
                 PRINT_CRIT("Unable to wake up device");
             }
-            ret = sb_read_fifo(snt8100fsr_g,
-                    0x3E,
-                    2,
+            ret = read_register(snt8100fsr_g,
+                    REGISTER_TCH_FIL_BYPASS,
                     &reg_data);
             if (ret) {
                 PRINT_CRIT("Unable to read key setting");
@@ -172,9 +171,8 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
                 PRINT_INFO("Keys are already enabled (0x%x)", reg_data);
             } else {
                 reg_data &= ~DISABLE_KEY_MASK;
-                ret = sb_write_fifo(snt8100fsr_g,
-                        0x3E,
-                        2,
+                ret = write_register(snt8100fsr_g,
+                        REGISTER_TCH_FIL_BYPASS,
                         &reg_data);
                 if (ret) {
                     PRINT_CRIT("Unable to enable key setting");
@@ -195,9 +193,8 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
                                                    POWER_OFF_TRANS_TIMEOUT)) {
                     PRINT_CRIT("Unable to wake up device");
                 }
-                if (sb_write_fifo(snt8100fsr_g,
-                                  0x2B,
-                                  2,
+                if (write_register(snt8100fsr_g,
+                                  REGISTER_BAR_CTRL,
                                   &reg_data)) {
                     PRINT_CRIT("Unable to disable edge");
                 } else {
@@ -216,25 +213,28 @@ static int power_off_notifier_handler(struct notifier_block *this, unsigned long
                                                POWER_OFF_TRANS_TIMEOUT)) {
                 PRINT_CRIT("Unable to wake up device");
             }
-            if (sb_write_fifo(snt8100fsr_g,
-                              0x39,
-                              6,
-                              reg_buf)) {
+            if (write_register(snt8100fsr_g,
+                              REGISTER_DYN_HI_RATE,
+                              &reg_buf[0]) ||
+                write_register(snt8100fsr_g,
+                              REGISTER_DYN_LO_RATE,
+                              &reg_buf[1]) ||
+                write_register(snt8100fsr_g,
+                              REFISTER_PWR_CTRL,
+                              &reg_buf[2])) {
                 PRINT_CRIT("Unable to set frame rate");
             }
             //Clear pending events after setting frame rate
             //    write 0x1a to address[0x05]  -> flush TFifo/CFifo/SFifo
             //    read address[0x02]           -> read to clear Host bit if any
             reg_data = 0x1A;
-            if (sb_write_fifo(snt8100fsr_g,
-                    0x05,
-                    2,
+            if (write_register(snt8100fsr_g,
+                    REGISTER_ACTIONS,
                     &reg_data)) {
                 PRINT_CRIT("Failed to flush");
             }
-            if (sb_read_fifo(snt8100fsr_g,
-                    0x02,
-                    2,
+            if (read_register(snt8100fsr_g,
+                    REGISTER_FRAME_RATE,
                     &reg_data)) {
                 PRINT_CRIT("Failed to clear host bit");
             }
@@ -539,8 +539,10 @@ int snt_nanohub_wake_device(struct snt8100fsr *snt8100fsr) {
     int count;
     uint8_t state = ACTIVITY_REQUEST;
 
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_STATE_CTRL, &state, 1, NULL, 0);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C write failed, error = %d", count);
         return -1;
     }
@@ -550,25 +552,30 @@ int snt_nanohub_wake_device(struct snt8100fsr *snt8100fsr) {
             nanohub_edge_get_transmission_state(),
             msecs_to_jiffies(TRANSMISSION_TIMEOUT));
     if (count <= 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("wait failed, %d", count);
         return -1;
     }
 
     count = nanohub_edge_get_transmission_state();
     if (count != state) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("ctrl state mismatch: 0x%02X, %02X",
                    state, count);
         return -1;
     }
 
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     return 0;
 }
 
 int snt_nanohub_bypass_cmd_timeout(struct snt8100fsr *snt8100fsr, uint8_t state, uint16_t timeout_ms) {
     int count;
 
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_STATE_CTRL, &state, 1, NULL, 0);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C write failed, error = %d", count);
         return -1;
     }
@@ -578,25 +585,30 @@ int snt_nanohub_bypass_cmd_timeout(struct snt8100fsr *snt8100fsr, uint8_t state,
             nanohub_edge_get_transmission_state(),
             msecs_to_jiffies(timeout_ms));
     if (count <= 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("wait failed, %d", count);
         return -1;
     }
 
     count = nanohub_edge_get_transmission_state();
     if (count != state) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("ctrl state mismatch: 0x%02X, %02X",
                    state, count);
         return -1;
     }
 
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     return 0;
 }
 
 int snt_nanohub_bypass_NonSCCmd_ctrl(struct snt8100fsr *snt8100fsr, uint8_t state) {
     int count;
 
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_STATE_CTRL, &state, 1, NULL, 0);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C write failed, error = %d", count);
         return -1;
     }
@@ -606,17 +618,20 @@ int snt_nanohub_bypass_NonSCCmd_ctrl(struct snt8100fsr *snt8100fsr, uint8_t stat
             nanohub_edge_get_transmission_state(),
             msecs_to_jiffies(TRANSMISSION_TIMEOUT));
     if (count <= 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("wait failed, %d", count);
         return -1;
     }
 
     count = nanohub_edge_get_transmission_state();
     if (count != state) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("ctrl state mismatch: 0x%02X, %02X",
                    state, count);
         return -1;
     }
 
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     return 0;
 }
 
@@ -638,8 +653,10 @@ int snt_nanohub_bypass_ctrl(struct snt8100fsr *snt8100fsr, uint8_t state) {
         snt_irq_disable(snt8100fsr);
     }
 
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_STATE_CTRL, &state, 1, NULL, 0);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C write failed, error = %d", count);
         return count;
     }
@@ -675,6 +692,7 @@ bypass_ctrl_end:
     if (count != 0 && ((state & 0x01) == FW_REG_LOG_OP_STOP)) {
         snt_irq_enable(snt8100fsr);
     }
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     PRINT_DEBUG("done");
     return count;
 }
@@ -686,8 +704,10 @@ int snt_nanohub_read(struct snt8100fsr *snt8100fsr,
     int count;
     PRINT_FUNC("%d bytes", num_read);
 
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_DATA_READ, NULL, 0, data_in, num_read);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C header read failed len = %d", count);
         return count;
     }
@@ -698,12 +718,14 @@ int snt_nanohub_read(struct snt8100fsr *snt8100fsr,
             msecs_to_jiffies(TRANSMISSION_TIMEOUT));
     if (count <= 0) {
         nanohub_edge_tx_rx_cleanup();
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("wait failed, %d", count);
         return -1;
     }
 
     count = nanohub_edge_get_transmission_state();
     if (count != num_read) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C read of %d bytes only read %d bytes",
                    num_read, count);
         return -1;
@@ -711,14 +733,17 @@ int snt_nanohub_read(struct snt8100fsr *snt8100fsr,
 #if 0
     count = i2c_master_recv(snt8100fsr->i2c, data_in, num_read);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C write failed, error = %d", count);
         return -1;
     } else if (count != num_read) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C read of %d bytes only read %d bytes",
                    num_read, count);
         return -1;
     }
 #endif
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     PRINT_DEBUG("%d bytes read", num_read);
     return 0;
 }
@@ -732,6 +757,7 @@ int snt_nanohub_write(struct snt8100fsr *snt8100fsr,
     while (num_write != 0) {
         uint16_t pkt_len = (num_write > SNT_FWDL_BUF_SIZE) ? SNT_FWDL_BUF_SIZE : num_write;
         num_write -= pkt_len;
+        mutex_lock(&snt8100fsr_g->bypass_write_lock);
         count = nanohub_edge_tx_rx(EDGE_DATA_WRITE, data_out, pkt_len, NULL, 0);
         if (count < 0) {
             PRINT_CRIT("I2C write failed, error = %d", count);
@@ -757,6 +783,7 @@ int snt_nanohub_write(struct snt8100fsr *snt8100fsr,
         }
         count = 0;
 write_end:
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         if (count < 0) {
             PRINT_CRIT("i2c pkt write failed at len %d", num_write);
             break;
@@ -807,11 +834,13 @@ int snt_nanohub_read_fifo_512(struct snt8100fsr *snt8100fsr,
     }
 
     addr_phase[1] = (len / 2) - 1;
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_DATA_READ, addr_phase, 2, in_val, len);
 #if 0
     count = i2c_master_send(snt8100fsr->i2c, addr_phase, 2);
 #endif
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C header read failed len = %d", count);
         return -1;
     }
@@ -822,12 +851,14 @@ int snt_nanohub_read_fifo_512(struct snt8100fsr *snt8100fsr,
             msecs_to_jiffies(TRANSMISSION_TIMEOUT));
     if (count <= 0) {
         nanohub_edge_tx_rx_cleanup();
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("wait failed, %d", count);
         return -1;
     }
 
     count = nanohub_edge_get_transmission_state();
     if (count != len) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C Read failed len=%d (expected %d)",
                    count, len);
         return -1;
@@ -835,15 +866,18 @@ int snt_nanohub_read_fifo_512(struct snt8100fsr *snt8100fsr,
 #if 0
     count = i2c_master_recv(snt8100fsr->i2c, in_val, len);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C read failed, error code = %d", count);
         return count;
     } else if (count != len) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C Read failed len=%d (expected %d)",
                    len, count);
         return -1;
     }
 #endif
 
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     PRINT_DEBUG("done");
     return 0;
 }
@@ -911,8 +945,10 @@ int snt_nanohub_write_fifo_512(struct snt8100fsr *snt8100fsr,
         PRINT_DEBUG("%02X (%d)", data_out[count], data_out[count]);
     }*/
 
+    mutex_lock(&snt8100fsr_g->bypass_write_lock);
     count = nanohub_edge_tx_rx(EDGE_DATA_WRITE, data_out, write_len, NULL, 0);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C write failed, error code = %d", count);
         return count;
     }
@@ -922,26 +958,31 @@ int snt_nanohub_write_fifo_512(struct snt8100fsr *snt8100fsr,
             nanohub_edge_get_transmission_state(),
             msecs_to_jiffies(TRANSMISSION_TIMEOUT));
     if (count <= 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("wait failed, %d", count);
         return -1;
     }
 
     count = nanohub_edge_get_transmission_state();
     if (count != write_len) {
+      mutex_unlock(&snt8100fsr_g->bypass_write_lock);
       PRINT_CRIT("ERROR: I2C Write failed len=%d (expected %d)", count, write_len);
       return -1;
     }
 #if 0
     count = i2c_master_send(snt8100fsr->i2c, data_out, write_len);
     if (count < 0) {
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
         PRINT_CRIT("I2C read failed, error code = %d", count);
         return count;
     } else if (count != write_len) {
-      PRINT_CRIT("ERROR: I2C Write failed len=%d (expected %d)", count, write_len);
-      return -1;
+        mutex_unlock(&snt8100fsr_g->bypass_write_lock);
+        PRINT_CRIT("ERROR: I2C Write failed len=%d (expected %d)", count, write_len);
+        return -1;
     }
 #endif
 
+    mutex_unlock(&snt8100fsr_g->bypass_write_lock);
     PRINT_DEBUG("done");
     return 0;
 }

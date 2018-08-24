@@ -87,6 +87,9 @@ struct wlock {
 };
 
 static struct wlock wl;
+/* HTC_AUD_START {HPKB:267} */
+static struct wakeup_source htc_hdmi_dp_wl;
+/* HTC_AUD_END */
 
 struct afe_ctl {
 	void *apr;
@@ -2479,11 +2482,28 @@ static int afe_send_cmd_port_start(u16 port_id)
 	if (ret) {
 		pr_err("%s: AFE enable for port 0x%x failed %d\n", __func__,
 		       port_id, ret);
+/* HTC_AUD_START - {HPKB:267} : Extend wakelock for DP/HDMI case to prevent system suspend */
+#if 0
 	} else if (this_afe.task != current) {
 		this_afe.task = current;
 		pr_debug("task_name = %s pid = %d\n",
 			 this_afe.task->comm, this_afe.task->pid);
 	}
+#else
+	} else {
+		if((port_id == HDMI_RX) || (port_id == DISPLAY_PORT_RX)){
+			pr_warn("DP/HDMI case\n");
+			__pm_stay_awake(&htc_hdmi_dp_wl);
+		}
+
+		if (this_afe.task != current) {
+			this_afe.task = current;
+			pr_debug("task_name = %s pid = %d\n",
+			this_afe.task->comm, this_afe.task->pid);
+		}
+	}
+#endif
+/* HTC_AUD_END */
 
 	return ret;
 }
@@ -5713,6 +5733,13 @@ int afe_close(int port_id)
 	int index = 0;
 	uint16_t port_index;
 
+/* HTC_AUD_START - HPKB:xxxx : Extend wakelock for DP/HDMI case to prevent system suspend */
+        if((port_id == HDMI_RX) || (port_id == DISPLAY_PORT_RX)){
+                pr_warn("afe_close:DP/HDMI case\n");
+                __pm_relax(&htc_hdmi_dp_wl);
+        }
+/* HTC_AUD_END */
+
 	if (this_afe.apr == NULL) {
 		pr_err("%s: AFE is already closed\n", __func__);
 		if ((port_id == RT_PROXY_DAI_001_RX) ||
@@ -7395,6 +7422,9 @@ static int __init afe_init(void)
 		init_waitqueue_head(&this_afe.wait[i]);
 	}
 	wakeup_source_init(&wl.ws, "spkr-prot");
+/* HTC_AUD_START {HPKB:267} */
+	wakeup_source_init(&htc_hdmi_dp_wl, "htc dp");
+/* HTC_AUD_END */
 	ret = afe_init_cal_data();
 	if (ret)
 		pr_err("%s: could not init cal data! %d\n", __func__, ret);
@@ -7410,6 +7440,9 @@ static void __exit afe_exit(void)
 	config_debug_fs_exit();
 	mutex_destroy(&this_afe.afe_cmd_lock);
 	wakeup_source_trash(&wl.ws);
+/* HTC_AUD_START {HPKB:267} */
+	wakeup_source_trash(&htc_hdmi_dp_wl);
+/* HTC_AUD_END */
 }
 
 device_initcall(afe_init);

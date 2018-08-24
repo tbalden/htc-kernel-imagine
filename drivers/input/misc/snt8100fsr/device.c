@@ -427,6 +427,7 @@ int snt_nanohub_device_init(struct platform_device *pdev,
     mutex_init(&snt8100fsr->track_report_sysfs_lock);
     mutex_init(&snt8100fsr->sb_lock);
     mutex_init(&snt8100fsr->bypass_read_lock);
+    mutex_init(&snt8100fsr->bypass_write_lock);
     return 0;
 }
 #endif

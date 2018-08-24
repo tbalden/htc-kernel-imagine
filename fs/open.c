@@ -1157,6 +1157,7 @@ struct file *filp_clone_open(struct file *oldfile)
 }
 EXPORT_SYMBOL(filp_clone_open);
 
+extern atomic_t k_power_off;
 long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 {
 #if 1
@@ -1176,6 +1177,12 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 	struct open_flags op;
 	int fd = build_open_flags(flags, mode, &op);
 	struct filename *tmp;
+
+	if (atomic_read(&k_power_off)) {
+		printk_ratelimited(KERN_WARNING "VFS reject do_sys_open: %s pid:%d(%s)(parent:%d/%s)\n", __func__,
+		current->pid, current->comm, current->parent->pid, current->parent->comm);
+		return -EROFS;
+	}
 
 	if (fd)
 		return fd;

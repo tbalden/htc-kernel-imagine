@@ -1351,6 +1351,18 @@ int smblib_set_ext_otg_control(struct smb_charger *chg,
 		const union power_supply_propval *val)
 {
 	int rc = 0;
+	/***Fix issue of Type C 2 in 1 headset dongle***/
+	u8 stat;
+	bool vbus_rising;
+
+	rc = smblib_read(chg, USBIN_BASE + INT_RT_STS_OFFSET, &stat);
+	if (rc < 0) {
+		smblib_err(chg, "Couldn't read USB_INT_RT_STS rc=%d\n", rc);
+		return rc;
+	}
+
+	vbus_rising = (bool)(stat & USBIN_PLUGIN_RT_STS_BIT);
+	/*********************************************/
 
 	mutex_lock(&chg->otg_oc_lock);
 	if (val->intval == 0 && regulator_is_enabled(chg->ext_power)) {
@@ -1360,10 +1372,14 @@ int smblib_set_ext_otg_control(struct smb_charger *chg,
 			goto unlock;
 		}
 	} else if (val->intval == 1 && !regulator_is_enabled(chg->ext_power)){
-		rc = regulator_enable(chg->ext_power);
-		if (rc < 0) {
-			smblib_err(chg, "Couldn't enable TPS61099 power rc=%d\n", rc);
-			goto unlock;
+		if (vbus_rising) {
+			smblib_dbg(chg, PR_OTG, "Vbus is rising, do not need to enable TPS61099 power.\n");
+		} else {
+			rc = regulator_enable(chg->ext_power);
+			if (rc < 0) {
+				smblib_err(chg, "Couldn't enable TPS61099 power rc=%d\n", rc);
+				goto unlock;
+			}
 		}
 	}
 

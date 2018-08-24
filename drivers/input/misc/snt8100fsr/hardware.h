@@ -52,6 +52,10 @@
 #define REGISTER_BYPASS         0x002A
 #define REGISTER_BAR_CTRL       0x002B
 #define REGISTER_BNK_CFG_OFFSET 0x002C
+#define REGISTER_DYN_HI_RATE    0x0039
+#define REGISTER_DYN_LO_RATE    0x003A
+#define REFISTER_PWR_CTRL       0x003B
+#define REGISTER_TCH_FIL_BYPASS 0x003E
 
 // Max register value before FIFO's begin
 #define MAX_REGISTER_ADDRESS    0x00FF

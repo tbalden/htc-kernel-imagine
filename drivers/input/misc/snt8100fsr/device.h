@@ -96,6 +96,7 @@ struct snt8100fsr {
     atomic_t                transmission_state;
     uint8_t                 bypass_ctrl_state;
     struct mutex            bypass_read_lock;
+    struct mutex            bypass_write_lock;
 #endif
     int                     bus_type;
 

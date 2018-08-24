@@ -67,6 +67,7 @@
 				qcom,mdss-dsi-v-top-border = <0>;
 				qcom,mdss-dsi-v-bottom-border = <0>;
 				qcom,mdss-dsi-h-sync-pulse = <0>;
+				qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
 				qcom,mdss-dsi-on-command = [
 					39 01 00 00 00 00 05 2A 00 00 05 9F /* soft reset */
 					39 01 00 00 00 00 05 2B 00 00 0B 3F /* soft reset */

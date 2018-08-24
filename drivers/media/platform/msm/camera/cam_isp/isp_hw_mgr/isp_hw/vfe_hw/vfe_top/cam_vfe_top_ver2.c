@@ -494,16 +494,36 @@ int cam_vfe_top_release(void *device_priv,
 {
 	struct cam_vfe_top_ver2_priv            *top_priv;
 	struct cam_isp_resource_node            *mux_res;
-
+	/*HTC_START*/
+	uint32_t i;
+	/*HTC_END*/
 	if (!device_priv || !release_args) {
 		CAM_ERR(CAM_ISP, "Error! Invalid input arguments");
 		return -EINVAL;
 	}
-
 	top_priv = (struct cam_vfe_top_ver2_priv   *)device_priv;
 	mux_res = (struct cam_isp_resource_node *)release_args;
 
 	CAM_DBG(CAM_ISP, "Resource in state %d", mux_res->res_state);
+	/*HTC_START*/
+	if (mux_res->res_state == CAM_ISP_RESOURCE_STATE_RESERVED) {
+		if (mux_res->res_id == CAM_ISP_HW_VFE_IN_CAMIF ||
+			(mux_res->res_id >= CAM_ISP_HW_VFE_IN_RDI0 &&
+			mux_res->res_id <= CAM_ISP_HW_VFE_IN_RDI3)) {
+			for (i = 0; i < CAM_VFE_TOP_VER2_MUX_MAX; i++) {
+				if (top_priv->mux_rsrc[i].res_id == mux_res->res_id) {
+					top_priv->req_clk_rate[i] = 0;
+					top_priv->req_axi_vote[i].compressed_bw = 0;
+					top_priv->req_axi_vote[i].uncompressed_bw = 0;
+					top_priv->axi_vote_control[i] =
+						CAM_VFE_BW_CONTROL_EXCLUDE;
+					break;
+				}
+			}
+			top_priv->hw_clk_rate = 0;
+		}
+	}
+	/*HTC_END*/
 	if (mux_res->res_state < CAM_ISP_RESOURCE_STATE_RESERVED) {
 		CAM_ERR(CAM_ISP, "Error! Resource in Invalid res_state :%d",
 			mux_res->res_state);

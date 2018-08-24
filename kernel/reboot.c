@@ -249,6 +249,7 @@ void kernel_halt(void)
 }
 EXPORT_SYMBOL_GPL(kernel_halt);
 
+atomic_t k_power_off = ATOMIC_INIT(0);
 /**
  *	kernel_power_off - power_off the system
  *
@@ -256,6 +257,7 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  */
 void kernel_power_off(void)
 {
+	atomic_set(&k_power_off, 1);
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();
