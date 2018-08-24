@@ -539,12 +539,12 @@ static enum alarmtimer_restart register_input_rtc_callback(struct alarm *al, kti
 	return ALARMTIMER_NORESTART;
 }
 
-//extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
-int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b) { return 1; }
-//extern int kcal_internal_restore(void);
-int kcal_internal_restore(void) { return 1; }
-//extern void kcal_internal_backup(void);
-void kcal_internal_backup(void) { }
+extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
+//int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b) { return 1; }
+extern int kcal_internal_restore(void);
+//int kcal_internal_restore(void) { return 1; }
+extern void kcal_internal_backup(void);
+//void kcal_internal_backup(void) { }
 
 static int kad_kcal_overlay_on = 0;
 static int kad_kcal_backed_up = 0;
@@ -903,12 +903,12 @@ static void fpf_home_button_func_trigger(void) {
 DEFINE_MUTEX(stop_kad_mutex);
 
 // kad stop
-static void stop_kad_running(bool instant_sat_restore)
+static void stop_kad_running(bool instant_sat_restore, const char* caller)
 {
 	if (!mutex_trylock(&stop_kad_mutex)) {
 		return;
 	}
-	pr_info("%s ----------- stop kad running ---------\n",__func__);
+	pr_info("%s %s ----------- stop kad running ---------\n",__func__,caller);
 	kad_should_start_on_uci_sys_change = 0;
 	if (kad_running) {
 		kad_running = 0;
@@ -936,7 +936,7 @@ void register_fp_wake(void) {
 		if (init_done) {
 			alarm_cancel(&kad_repeat_rtc);
 		}
-		stop_kad_running(true);
+		stop_kad_running(true,__func__);
 		if (poke) {
 			ts_poke();
 		}
@@ -960,7 +960,7 @@ void register_fp_irq(void) {
 		if (init_done) {
 			alarm_cancel(&kad_repeat_rtc);
 		}
-		stop_kad_running(true);
+		stop_kad_running(true,__func__);
 		if (poke) {
 			ts_poke();
 		}
@@ -1018,7 +1018,14 @@ static bool fpf_input_filter(struct input_handle *handle,
 		return false;
 
 	register_input_event(__func__);
-	if (screen_on_full && !screen_off_early) squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
+	if (screen_on_full && !screen_off_early) {
+		squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
+		if (kad_running || kad_running_for_kcal_only) { 
+			stop_kad_running(true,__func__);
+			ts_poke();
+		}
+	}
+
 
 	// if it's not on, don't filter anything...
 	if (get_fpf_switch() == 0) {
@@ -1257,7 +1264,7 @@ static int get_squeeze_power_kernel_max_threshold(void) {
 #endif
 
 // int that signals if kernel should handle squeezes for squeeze to sleep/wake
-static int squeeze_kernel_handled = 0;
+static int squeeze_kernel_handled = 1;
 
 void register_squeeze_power_threshold_change(int power) {
 #if 0
@@ -1989,7 +1996,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 		// cancel alarm timer!
 		kad_repeat_counter = 0;
 	}
-	stop_kad_running(!squeeze_peek_wait); // based on interruption, immediate kcal restore (and no screen off happening), or for screen off : sleep a bit and then do it..
+	stop_kad_running(!squeeze_peek_wait,__func__); // based on interruption, immediate kcal restore (and no screen off happening), or for screen off : sleep a bit and then do it..
 	squeeze_peek_wait = 0;
 }
 static DECLARE_WORK(squeeze_peekmode_work, squeeze_peekmode);
@@ -2004,7 +2011,7 @@ static enum alarmtimer_restart check_single_fp_vib_rtc_callback(struct alarm *al
 	// FP single vibration: unlock device event...
 	pr_info("%s kad double fp vibration detection: single vib detected Stop KAD!\n",__func__);
 	squeeze_peek_wait = 0;
-	stop_kad_running(true);
+	stop_kad_running(true,__func__);
 	if (init_done) {
 		alarm_cancel(&kad_repeat_rtc);
 	}
@@ -2016,15 +2023,20 @@ static enum alarmtimer_restart check_single_fp_vib_rtc_callback(struct alarm *al
 // this callback allows registration of FP vibration, in which case peek timeout auto screen off should be canceled...
 int register_fp_vibration(void) {
 	// fp scanner pressed, cancel peek timeout, but only do that automatically if not in kad mode (otherwise a double fp vibration check is due)
+	pr_info("%s kad_kcal_overlay_on %d kad_running %d kad_running_for_kcal_only %d\n",__func__,kad_kcal_overlay_on,kad_running,kad_running_for_kcal_only);
 	if ((!kad_running && screen_on) || kad_running_for_kcal_only) {
+		bool poke = kad_kcal_overlay_on || kad_running_for_kcal_only;
 		squeeze_peek_wait = 0;
-		stop_kad_running(true);
+		stop_kad_running(true,__func__);
+		if (poke) {
+			ts_poke();
+		}
 		register_input_event(__func__);
 	} else {
 		if (check_single_fp_running) {
 			if (((!kad_running || !get_kad_disable_fp_input()) && screen_on) || (kad_running_for_kcal_only && screen_on)) {
 				squeeze_peek_wait = 0;
-				stop_kad_running(true);
+				stop_kad_running(true,__func__);
 				register_input_event(__func__); // KAD is not running or shouldnt block fp input, (for KAD a double FP vib means no stopping if kad fp input disabled, 
 				// ...so might be pocket touch, do not register!)
 				// ...so it's either for a screen on state, or for Squeeze peek KCAL only, so registering user activity to cancel smart timing is ok.
@@ -2097,7 +2109,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 				bool poke = kad_kcal_overlay_on;
 				last_screen_event_timestamp = jiffies;
 				squeeze_peek_wait = 0; // yes, so interrupt peek sleep, screen should remain on after a second short squeeze happened still in time window of peek...
-				stop_kad_running(true);
+				stop_kad_running(true,__func__);
 				if (poke) {
 					ts_poke();
 				}
@@ -2152,7 +2164,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 					bool poke = kad_kcal_overlay_on;
 					last_screen_event_timestamp = jiffies;
 					squeeze_peek_wait = 0; // interrupt peek sleep, screen should remain on after a second short squeeze while still in time window of peek...
-					stop_kad_running(true);
+					stop_kad_running(true,__func__);
 					if (poke) {
 						ts_poke();
 					}
@@ -2218,7 +2230,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 				bool poke = kad_kcal_overlay_on;
 				last_screen_event_timestamp = jiffies;
 				squeeze_peek_wait = 0; // interrupt peek sleep, screen should remain on after a second short squeeze while still in time window of peek...
-				stop_kad_running(true);
+				stop_kad_running(true,__func__);
 				if (poke) {
 					ts_poke();
 				}
@@ -2238,7 +2250,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 			// ..that would mean user is on the settings screen and calibrating.
 			register_input_event(__func__);
 			fpf_pwrtrigger(0,__func__); // POWER ON FULLY, NON PEEK
-			stop_kad_running(true);
+			stop_kad_running(true,__func__);
 		} else if (screen_on && diff>MAX_SQUEEZE_TIME && diff<=MAX_SQUEEZE_TIME_LONG && get_squeeze_swipe()) {
 			if (get_squeeze_sleep()) {
 				//unsigned int last_scroll_time_diff = jiffies - last_scroll_emulate_timestamp;
@@ -2259,7 +2271,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 				pr_info("%s squeeze call -- power onoff endstage SWIPE - full sleep - swipe mode middle long gesture! %d\n",__func__,stage);
 				last_screen_event_timestamp = jiffies;
 				fpf_pwrtrigger(0,__func__); // POWER OFF
-				stop_kad_running(true);
+				stop_kad_running(true,__func__);
 				return;
 			} else {
 				register_input_event(__func__);
@@ -2349,7 +2361,7 @@ void stop_kernel_ambient_display(bool interrupt_ongoing) {
 		alarm_cancel(&kad_repeat_rtc);
 	}
 	if (interrupt_ongoing) {
-		stop_kad_running(true);
+		stop_kad_running(true,__func__);
 	}
 }
 EXPORT_SYMBOL(stop_kernel_ambient_display);
@@ -2481,9 +2493,12 @@ static unsigned long filtering_ts_event_last_event = 0;
 static int kad_finger_counter = 0;
 
 static int block_power_key_in_pocket = 0;
+static int proximity = 0;
 int get_block_power_key_in_pocket(void) {
-	int proximity = uci_get_sys_property_int_mm("proximity", 0, 0, 1);
 	return proximity && uci_get_user_property_int_mm("block_power_key_in_pocket", block_power_key_in_pocket, 0, 1);
+}
+int get_block_volume_key_in_pocket(void) {
+	return proximity && uci_get_user_property_int_mm("block_volume_key_in_pocket", 0, 0, 1);
 }
 
 //#define LOG_INPUT_EVENTS
@@ -2511,11 +2526,16 @@ static bool ts_input_filter(struct input_handle *handle,
 	//pr_info("%s ts input filter called t %d c %d v %d\n",__func__, type,code,value);
 
 	if (type == EV_KEY) {
-#ifdef LOG_INPUT_EVENTS
+//#ifdef LOG_INPUT_EVENTS
+#if 1
 		pr_info("%s _____ ts_input key %d %d %d\n",__func__,type,code,value);
 #endif
 		if (code == 116 && !screen_on && get_block_power_key_in_pocket()) {
 			pr_info("%s proximity ts_input power key filter\n",__func__);
+			return true;
+		}
+		if ((code == 115 || code == 114) && !screen_on && get_block_volume_key_in_pocket() && !ntf_is_in_call()) { // do not filter in call
+			pr_info("%s proximity ts_input volume key filter\n",__func__);
 			return true;
 		}
 	}
@@ -2640,8 +2660,8 @@ skip_ts:
 		if (!kad_running || kad_running_for_kcal_only || !get_kad_disable_touch_input() || (type==EV_KEY && !ts_is_touchscreen_key_event(type,code))) { // if not in KAD display mode, or not touchscreen input
 			//pr_info("%s squeeze_peek_wait = 0\n",__func__);
 			squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
-			if (kad_running) { 
-				stop_kad_running(true);
+			if (kad_running || kad_running_for_kcal_only) { 
+				stop_kad_running(true,__func__);
 			}
 		} else if (kad_running && !kad_running_for_kcal_only && get_kad_disable_touch_input() && (type!=EV_KEY || ts_is_touchscreen_key_event(type,code))) {
 			// if kad running and filtering on... filter it...
@@ -2698,14 +2718,14 @@ skip_ts:
 				squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
 				if (kad_running) {
 					pr_info("%s ##### two finger -- stop kad running #######\n",__func__);
-					stop_kad_running(true);
+					stop_kad_running(true,__func__);
 				}
 			}
 			if (get_kad_three_finger_gesture() && kad_finger_counter==3) {
 				squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
 				if (kad_running) {
 					pr_info("%s ##### three finger -- stop kad running #######\n",__func__);
-					stop_kad_running(true);
+					stop_kad_running(true,__func__);
 				}
 			}
 

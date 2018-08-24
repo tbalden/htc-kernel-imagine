@@ -39,7 +39,7 @@
 
 #define DRIVER_AUTHOR "illes pal <illespal@gmail.com>"
 #define DRIVER_DESCRIPTION "uci notifications driver"
-#define DRIVER_VERSION "1.0"
+#define DRIVER_VERSION "1.2"
 
 //#define NTF_D_LOG
 
@@ -113,6 +113,13 @@ bool ntf_is_screen_early_off(void) {
 	return screen_off_early;
 }
 EXPORT_SYMBOL(ntf_is_screen_early_off);
+
+// ======= phone state
+static bool ntf_in_call = false;
+bool ntf_is_in_call(void) {
+	return ntf_in_call;
+}
+EXPORT_SYMBOL(ntf_is_in_call);
 
 // ======= CHARGE
 
@@ -351,6 +358,9 @@ void ntf_input_event(const char* caller, const char *param) {
 }
 EXPORT_SYMBOL(ntf_input_event);
 
+// TODO move fpf part here?
+extern int register_fp_vibration(void);
+
 void ntf_vibration(int length) {
 	if (length>=MIN_TD_VALUE_NOTIFICATION) {
 #if 1
@@ -360,6 +370,10 @@ void ntf_vibration(int length) {
 #endif
 		ntf_notify_listeners(NTF_EVENT_NOTIFICATION, 1, NTF_EVENT_NOTIFICATION_ARG_HAPTIC);
 	}
+#if 1
+// htc u12
+	if (length==TD_VALUE_HTC_U12_FINGERPRINT) register_fp_vibration();//ntf_input_event(__func__,"fp");
+#endif
 }
 EXPORT_SYMBOL(ntf_vibration);
 
@@ -398,14 +412,26 @@ EXPORT_SYMBOL(ntf_camera_stopped);
 
 
 static int last_notification_number = 0;
+static bool ntf_locked = true;
 // registered sys uci listener
 static void uci_sys_listener(void) {
         pr_info("%s [CLEANSLATE] sys listener... \n",__func__);
         {
                 bool ringing_new = !!uci_get_sys_property_int_mm("ringing", 0, 0, 1);
+                bool proximity_new = !!uci_get_sys_property_int_mm("proximity", 0, 0, 1);
+                bool locked_new = !!uci_get_sys_property_int_mm("locked", 0, 0, 1);
+                ntf_in_call = !!uci_get_sys_property_int_mm("in_call", 0, 0, 1);
                 ntf_face_down = !!uci_get_sys_property_int_mm("face_down", 0, 0, 1);
-                ntf_proximity = !!uci_get_sys_property_int_mm("proximity", 0, 0, 1);
                 ntf_silent = !!uci_get_sys_property_int_mm("silent", 0, 0, 1);
+
+		if (proximity_new != ntf_proximity) {
+			ntf_proximity = proximity_new;
+			ntf_notify_listeners(NTF_EVENT_PROXIMITY, ntf_proximity?1:0, "");
+		}
+		if (locked_new != ntf_locked) {
+			ntf_locked = locked_new;
+			ntf_notify_listeners(NTF_EVENT_LOCKED, ntf_locked?1:0, "");
+		}
 
                 if (ringing_new && !ntf_ringing) {
 			ntf_notify_listeners(NTF_EVENT_RINGING, 1, "");

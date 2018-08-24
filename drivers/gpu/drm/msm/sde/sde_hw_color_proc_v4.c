@@ -232,6 +232,11 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 		val = 255;
 		hue = 0;
 	}
+	if (override) {
+		sat = stored_sat;
+		cont = stored_cont;
+		val = stored_val;
+	}
 #endif
 	if (!hw_cfg->payload) {
 		DRM_DEBUG_DRIVER("disable pcc feature\n");
