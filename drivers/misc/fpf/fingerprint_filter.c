@@ -541,7 +541,7 @@ static enum alarmtimer_restart register_input_rtc_callback(struct alarm *al, kti
 
 extern int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b);
 //int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int g, int b) { return 1; }
-extern int kcal_internal_restore(void);
+extern int kcal_internal_restore(bool force_kcal_update);
 //int kcal_internal_restore(void) { return 1; }
 extern void kcal_internal_backup(void);
 //void kcal_internal_backup(void) { }
@@ -556,7 +556,7 @@ static bool kcal_sleep_before_restore = false;
 
 DEFINE_MUTEX(kcal_read_write_lock);
 
-static void kcal_restore_sync(void) {
+static void kcal_restore_sync(bool force_kcal_update) {
 	mutex_lock(&kcal_read_write_lock);
 	if (!kad_running && needs_kcal_restore_on_screen_on && kad_kcal_backed_up && kad_kcal_overlay_on) {
 		pr_info("%s kad\n",__func__);
@@ -564,7 +564,7 @@ static void kcal_restore_sync(void) {
 			int retry_count = 2;
 			pr_info("%s kad RRRRRRRRRRRR restore... screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 			while (retry_count-->0) {
-				if (screen_on && kcal_internal_restore()) {
+				if (screen_on && kcal_internal_restore(force_kcal_update)) {
 					needs_kcal_restore_on_screen_on = 0;
 					kad_kcal_overlay_on = 0;
 					kad_kcal_backed_up = 0; // changes to kcal may happen in user apps...don't take granted it's backed up (like night mode)
@@ -581,12 +581,11 @@ static void kcal_restore(struct work_struct * kcal_restore_work)
 {
 	pr_info("%s kad ############ restore_backup     screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 	if (kcal_sleep_before_restore) { msleep(250); } // squeeze peek timed out, wait a bit till screen faded enough... otherwise instant restore
-	kcal_restore_sync();
+	kcal_restore_sync(!kcal_sleep_before_restore);
 }
 static DECLARE_WORK(kcal_restore_work, kcal_restore);
 
 static int kcal_push_restore = 0;
-static int kcal_push_break = 0;
 static void kcal_listener(struct work_struct * kcal_listener_work)
 {
 	pr_info("%s kad ## kcal listener start   screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
@@ -594,15 +593,8 @@ static void kcal_listener(struct work_struct * kcal_listener_work)
 		if (kcal_push_restore) {
 			pr_info("%s kad !! kcal listener restore  screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 			kcal_push_restore = 0;
-			kcal_push_break = 0;
 			if (kcal_sleep_before_restore) { msleep(250); } // 230->250 (oreo screen off a bit longer) is ok, before a screen off happens fully...
-			if (screen_on) kcal_restore_sync();
-			break;
-		}
-		if (kcal_push_break) {
-			pr_info("%s kad !! kcal listener break  screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
-			kcal_push_restore = 0;
-			kcal_push_break = 0;
+			if (screen_on) kcal_restore_sync(!kcal_sleep_before_restore);
 			break;
 		}
 		msleep(5);
@@ -1243,7 +1235,6 @@ static void start_kad_running(int for_squeeze) {
 		if ((is_kad_on()&&get_kad_kcal())||(for_squeeze&&is_squeeze_peek_kcal(true))) {
 			schedule_work(&kcal_set_work);//kcal_internal_override_sat(128);
 			kcal_push_restore = 0;
-			kcal_push_break = 0;
 			queue_work(kcal_listener_wq, &kcal_listener_work);
 		}
 	}

@@ -383,7 +383,7 @@ void kcal_internal_backup(void)
 {
 }
 EXPORT_SYMBOL(kcal_internal_backup);
-int kcal_internal_restore(void)
+int kcal_internal_restore(bool force_kcal_update)
 {
 	if (!mutex_trylock(&kcal_int_lock)) {
 		pr_info("%s kad unable to lock\n",__func__);
@@ -391,7 +391,7 @@ int kcal_internal_restore(void)
 	}
 	override = false;
 
-	kcal_force_update();
+	if (force_kcal_update) kcal_force_update();
 
 	mutex_unlock(&kcal_int_lock);
 	return 1;
