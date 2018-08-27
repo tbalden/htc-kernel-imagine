@@ -389,9 +389,10 @@ int kcal_internal_restore(bool force_kcal_update)
 		pr_info("%s kad unable to lock\n",__func__);
 		return 0;
 	}
-	override = false;
-
-	if (force_kcal_update) kcal_force_update();
+	if (override) {
+		override = false;
+		if (force_kcal_update) kcal_force_update();
+	}
 
 	mutex_unlock(&kcal_int_lock);
 	return 1;

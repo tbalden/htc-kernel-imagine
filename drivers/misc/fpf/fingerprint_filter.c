@@ -12,6 +12,8 @@
 #include <linux/msm_drm_notify.h>
 #endif
 
+#define CONFIG_FPF_KCAL_ANYTIME
+
 #include <linux/notifier.h>
 #include <linux/fb.h>
 
@@ -2903,7 +2905,11 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
         if (!strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
         } else
         if (!strcmp(event,NTF_EVENT_INPUT)) {
-
+#ifdef CONFIG_FPF_KCAL_ANYTIME
+		if (!kad_running && !kad_running_for_kcal_only) {
+			kcal_internal_restore(true);
+		}
+#endif
         } else
         if (!strcmp(event,NTF_EVENT_PROXIMITY)) {
 		proximity = !!num_param;
