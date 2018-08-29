@@ -1930,13 +1930,25 @@ static void squeeze_longcount_trigger(void) {
 	schedule_work(&squeeze_longcount_work);
 }
 
-// last time when screen was switched off by KAD ending uninterrupted
+// last time when screen was switched off
 unsigned long last_kad_screen_off_time = 0;
 #define KAD_SCREEN_OFF_NEAR_TIME_MAX 320
 bool is_near_kad_screen_off_time(void) {
 	unsigned int diff = jiffies - last_kad_screen_off_time;
-	pr_info("%s difference since last kad_screen_off %u < %d\n",__func__,diff, KAD_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL);
+	pr_info("%s difference since last screen_off %u < %d\n",__func__,diff, KAD_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL);
 	if (diff < KAD_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL) {
+		return true;
+	}
+	return false;
+}
+
+// last time when screen was switched off by KAD/peek ending uninterrupted
+unsigned long last_peek_timeout_screen_off_time = 0;
+#define PEEK_TIMEOUT_SCREEN_OFF_NEAR_TIME_MAX 80
+bool is_near_peek_timeout_screen_off_time(void) {
+	unsigned int diff = jiffies - last_peek_timeout_screen_off_time;
+	pr_info("%s difference since last kad_screen_off %u < %d\n",__func__,diff, PEEK_TIMEOUT_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL);
+	if (diff < PEEK_TIMEOUT_SCREEN_OFF_NEAR_TIME_MAX * JIFFY_MUL) {
 		return true;
 	}
 	return false;
@@ -1971,6 +1983,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 	// screen still on and sqeueeze peek wait was not interrupted...
 	if (screen_on && squeeze_peek_wait) {
 		last_kad_screen_off_time = jiffies;
+		last_peek_timeout_screen_off_time = jiffies;
 		fpf_pwrtrigger(0,__func__);
 		if (kad_running && !kad_running_for_kcal_only && !interrupt_kad_peekmode_wait) { // not interrupted, and kad mode peek.. see if re-schedule is needed...
 			kad_repeat_counter++;
@@ -2503,6 +2516,7 @@ static bool ts_is_touchscreen_key_event(int type, int code) {
 		code == 158 || code == 580);
 }
 
+static bool filter_next_power_key_up = false;
 static bool ts_input_filter(struct input_handle *handle,
                                     unsigned int type, unsigned int code,
                                     int value)
@@ -2523,9 +2537,16 @@ static bool ts_input_filter(struct input_handle *handle,
 #if 1
 		pr_info("%s _____ ts_input key %d %d %d\n",__func__,type,code,value);
 #endif
-		if (code == 116 && !screen_on && get_block_power_key_in_pocket()) {
-			pr_info("%s proximity ts_input power key filter\n",__func__);
-			return true;
+		if (code == 116) {
+			if (value==0 && filter_next_power_key_up) return true;
+
+			if (value==1 && !screen_on && (get_block_power_key_in_pocket() || is_near_peek_timeout_screen_off_time())) {
+				pr_info("%s proximity or near_peak_timeout ts_input power key filter (near peek timeout screenoff: %d)\n",__func__,is_near_peek_timeout_screen_off_time());
+				filter_next_power_key_up = true;
+				return true;
+			} else {
+				filter_next_power_key_up = false;
+			}
 		}
 		if ((code == 115 || code == 114) && !screen_on && get_block_volume_key_in_pocket() && !ntf_is_in_call()) { // do not filter in call
 			pr_info("%s proximity ts_input volume key filter\n",__func__);
