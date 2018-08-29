@@ -435,17 +435,9 @@ static int kad_kcal_r = 150;
 static int kad_kcal_g = 150;
 static int kad_kcal_b = 254;
 
-
-
-static int kad_on_override = 0;
-void override_kad_on(int override) {
-	kad_on_override = !!override;
-}
-EXPORT_SYMBOL(override_kad_on);
-
 int is_kad_on(void) {
 #ifdef CONFIG_FPF_KAD
-	if (uci_get_user_property_int_mm("kad_on", kad_on, 0, 1) || kad_on_override) {
+	if (uci_get_user_property_int_mm("kad_on", kad_on, 0, 1)) {
 		return 1;
 	}
 #endif
@@ -482,7 +474,7 @@ bool is_screen_locked(void) {
 int should_kad_start(void) {
 #ifdef CONFIG_FPF_KAD
 	if (fpf_ringing || fpf_screen_waking_app) return 0;
-	if (uci_get_user_property_int_mm("kad_on", kad_on, 0, 1) || kad_on_override) {
+	if (uci_get_user_property_int_mm("kad_on", kad_on, 0, 1)) {
 		int level = smart_get_notification_level(NOTIF_KAD);
 		if (level != NOTIF_STOP) {
 			int proximity = uci_get_sys_property_int_mm("proximity", 0, 0, 1);
@@ -505,7 +497,7 @@ int should_kad_start(void) {
 static bool store_at_unblank_is_squeeze_peek_kcal = false;
 int is_squeeze_peek_kcal(bool unblank) {
 	if (unblank) {
-		store_at_unblank_is_squeeze_peek_kcal = (uci_get_user_property_int_mm("squeeze_peek_kcal", squeeze_peek_kcal, 0, 1) || (kad_on_override&&get_kad_kcal())) && (is_screen_locked());
+		store_at_unblank_is_squeeze_peek_kcal = uci_get_user_property_int_mm("squeeze_peek_kcal", squeeze_peek_kcal, 0, 1) && is_screen_locked();
 	}
 	return store_at_unblank_is_squeeze_peek_kcal;
 }
@@ -614,7 +606,7 @@ static void kcal_set(struct work_struct * kcal_set_work)
 		int local_kad_kcal = get_kad_kcal();
 		int local_squeeze_kcal = is_squeeze_peek_kcal(true);
 		pr_info("%s kad\n",__func__);
-		if (((is_kad_on() && local_kad_kcal) || local_squeeze_kcal) && !kad_kcal_overlay_on) // && !kad_kcal_backed_up ) 
+		if (((is_kad_on() && local_kad_kcal && !kad_running_for_kcal_only) || (local_squeeze_kcal && kad_running_for_kcal_only)) && !kad_kcal_overlay_on)
 		{
 			// make sure to start only after enough time passed since screen on, because with srgb profile colors get wrong if concurs
 			unsigned int time_since_screen_on = 0;
@@ -644,7 +636,7 @@ static void kcal_set(struct work_struct * kcal_set_work)
 				}
 			}
 		}
-		if (((is_kad_on() && local_kad_kcal) || local_squeeze_kcal) && kad_kcal_backed_up && !kad_kcal_overlay_on) {
+		if (((is_kad_on() && local_kad_kcal && !kad_running_for_kcal_only) || (local_squeeze_kcal && kad_running_for_kcal_only)) && kad_kcal_backed_up && !kad_kcal_overlay_on) {
 			int retry_count = 60;
 			bool done = false;
 			pr_info("%s kad override... SSSSSSSSSS   screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
