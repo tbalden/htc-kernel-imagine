@@ -1167,7 +1167,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 		char * kname = kmalloc(HOSTS_ORIG_LEN, GFP_KERNEL);
 		int len = strncpy_from_user(kname, filename, HOSTS_ORIG_LEN);
 		if (len && !strcmp(kname,hosts_orig_name)) {
-			pr_info("%s [kadaway] kernel mode %s\n",__func__,kname);
+			pr_debug("%s [kadaway] kernel mode %s\n",__func__,kname);
 			kernel_space = true;
 		}
 		kfree(kname);
