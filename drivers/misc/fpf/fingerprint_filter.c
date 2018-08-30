@@ -1439,10 +1439,10 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 	ts_current_count = 1;
 	{
 		int y_diff = 1100;
-		int y_delta = -3;
-		int y_steps = 10;
+		int y_delta = -6;
+		int y_steps = 5;
 		int pseudo_rnd = 0;
-		swipe_step_wait_time_mul = 100;
+		swipe_step_wait_time_mul = 200;
 		{
 			int empty_check_count = 0;
 			int first_steps = 1;
@@ -1482,6 +1482,11 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 					pr_info("%s ts_input squeeze emulation step = %d POS_Y = %d \n",__func__,y_steps, 1000+y_diff);
 				}
 				while(!ts_track_event_complete(false)) {
+					diff_time = jiffies - start_time;
+					if (diff_time>4*JIFFY_MUL) {
+						pr_info("%s breaking incomplete check cycle ts_check\n",__func__);
+						break;
+					}
 					msleep(1);
 				}
 			}
@@ -1503,13 +1508,13 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 				empty_check_count++;
 				if (empty_check_count%100==30) {
 					pr_info("%s ts_check || fallback\n",__func__);
-					input_event(ts_device,EV_ABS,47,0);
+					input_event(ts_device,EV_ABS,ABS_MT_SLOT,0);
 					input_event(ts_device,EV_ABS,ABS_MT_TRACKING_ID,-1);
 					input_event(ts_device,EV_SYN,0,0);
 					msleep(5);
 
 					ts_track_event_clear(true);
-					ts_track_event_gather(EV_ABS,47,31);
+					ts_track_event_gather(EV_ABS, ABS_MT_SLOT,31);
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, highest_mt_slot+1);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_X, 0);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_Y, 0);
@@ -1537,7 +1542,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 					msleep(10);
 
 					ts_track_event_clear(true);
-					ts_track_event_gather(EV_ABS,47,30);
+					ts_track_event_gather(EV_ABS, ABS_MT_SLOT,30);
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, highest_mt_slot);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_X, 1);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_Y, 1);
@@ -1784,13 +1789,13 @@ static void ts_scroll_emulate(int down, int full) {
 				empty_check_count++;
 				if (empty_check_count%100==30) {
 					pr_info("%s ts_check || fallback\n",__func__);
-					input_event(ts_device,EV_ABS,47,0);
+					input_event(ts_device,EV_ABS,ABS_MT_SLOT,0);
 					input_event(ts_device,EV_ABS,ABS_MT_TRACKING_ID,-1);
 					input_event(ts_device,EV_SYN,0,0);
 					msleep(5);
 
 					ts_track_event_clear(true);
-					ts_track_event_gather(EV_ABS,47,31);
+					ts_track_event_gather(EV_ABS, ABS_MT_SLOT,31);
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, highest_mt_slot+1);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_X, 0);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_Y, 0);
@@ -1818,7 +1823,7 @@ static void ts_scroll_emulate(int down, int full) {
 					msleep(10);
 
 					ts_track_event_clear(true);
-					ts_track_event_gather(EV_ABS,47,30);
+					ts_track_event_gather(EV_ABS, ABS_MT_SLOT,30);
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, highest_mt_slot);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_X, 1);
 					ts_track_event_gather(EV_ABS, ABS_MT_POSITION_Y, 1);
