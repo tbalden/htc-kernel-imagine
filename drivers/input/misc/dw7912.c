@@ -176,6 +176,7 @@ static void boost_voltage(bool on) {
 	mutex_unlock(&boost_lock);
 }
 
+static bool boost_call_alarm_always = true;
 static void uci_user_listener(void) {
     pr_info("%s haptics uci user parse happened...\n",__func__);
     vmax_needs_reset = 1;
@@ -183,6 +184,7 @@ static void uci_user_listener(void) {
 		int set = uci_get_vibration_power_set();
 		int perc = uci_get_vibration_power_percentage();
 		int sk_perc = uci_get_vibration_sidekeys_percentage();
+		boost_call_alarm_always = uci_get_user_property_int_mm("boost_call_alarm_always", 1,0,1);
 		if (set!=current_power_set || current_perc_set!=perc || current_sk_perc_set!=sk_perc) {
 			if (g_p) {
 				g_p->notification_Voltage = set?(original_notif_voltage * perc)/25:original_notif_voltage;
@@ -244,6 +246,12 @@ int get_notification_boost_only_in_pocket(void) {
 EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
 
 // TODO call ntf_haptic ##################
+static bool should_boost_call_alarm_always(int duration) {
+	if (duration == MIN_TD_VALUE_NOTIFICATION_ALARM || duration == MIN_TD_VALUE_NOTIFICATION_CALL) {
+		if (boost_call_alarm_always) return true;
+	}
+	return false;
+}
 
 static int should_not_boost(void) {
     int l_boost_only_in_pocket = uci_get_boost_only_in_pocket();
@@ -782,7 +790,7 @@ static ssize_t dw_haptics_store_duration(struct device *dev, struct device_attri
         pr_info("%s [CLEANSLATE] playtime duration %d\n",__func__,val);
         if (val >= MIN_TD_VALUE_NOTIFICATION) {
                 notification_duration_detected = 1;
-                if (smart_get_boost_on() && !should_not_boost()) { // raise voltage to boosted value in case of notification durations...
+                if (should_boost_call_alarm_always(val) || (smart_get_boost_on() && !should_not_boost())) { // raise voltage to boosted value in case of notification durations...
 			boost_voltage(true);
                 } else {
 			boost_voltage(false);
