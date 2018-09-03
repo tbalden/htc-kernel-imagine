@@ -117,6 +117,7 @@ static bool notification_duration_detected = 0;
 
 static int notification_booster = 0;
 static int notification_booster_overdrive_perc = 70;
+static int call_alarm_booster_overdrive_perc = 70;
 static int vibration_power_set = 0;
 static int vibration_power_percentage = 50;
 
@@ -130,7 +131,10 @@ int uci_get_notification_booster(void) {
     return uci_get_user_property_int_mm("notification_booster", notification_booster,0,100);
 }
 int uci_get_notification_booster_overdrive_perc(void) {
-    return uci_get_user_property_int_mm("notification_booster_overdrive_perc", notification_booster_overdrive_perc,70,150);
+    return uci_get_user_property_int_mm("notification_booster_overdrive_perc", notification_booster_overdrive_perc,50,100);
+}
+int uci_get_call_alarm_booster_overdrive_perc(void) {
+    return uci_get_user_property_int_mm("call_alarm_booster_overdrive_perc", call_alarm_booster_overdrive_perc,50,100);
 }
 
 int uci_get_vibration_power_percentage(void) {
@@ -159,13 +163,19 @@ void haptics_voltage_switch(bool enabled);
 static DEFINE_MUTEX(boost_lock);
 
 static bool boost_reset = true;
-static void boost_voltage(bool on) {
+static void boost_voltage(bool on,bool call_or_alarm) {
 	static bool boosted = false;
+	static bool boosted_call_or_alarm = false;
 	pr_info("%s [VIB] haptics uci boost... %d \n",__func__,on);
 	mutex_lock(&boost_lock);
-	if ((on && !boosted)||boost_reset) {
+	if ((on && (!boosted || call_or_alarm!=boosted_call_or_alarm))||boost_reset) {
 		boosted = true;
-		g_p->notification_Voltage = (MAX_VOLTAGE) * uci_get_notification_booster_overdrive_perc() / 100;
+		boosted_call_or_alarm = call_or_alarm;
+		if (call_or_alarm) {
+			g_p->notification_Voltage = (MAX_VOLTAGE) * uci_get_call_alarm_booster_overdrive_perc() / 100;
+		} else {
+			g_p->notification_Voltage = (MAX_VOLTAGE) * uci_get_notification_booster_overdrive_perc() / 100;
+		}
 		haptics_voltage_switch(true);
 	} else if ((!on && boosted)||boost_reset) {
 		boosted = false;
@@ -246,8 +256,11 @@ int get_notification_boost_only_in_pocket(void) {
 EXPORT_SYMBOL(get_notification_boost_only_in_pocket);
 
 // TODO call ntf_haptic ##################
+static bool is_call_or_alarm(int duration) {
+	return duration == MIN_TD_VALUE_NOTIFICATION_ALARM || duration == MIN_TD_VALUE_NOTIFICATION_CALL;
+}
 static bool should_boost_call_alarm_always(int duration) {
-	if (duration == MIN_TD_VALUE_NOTIFICATION_ALARM || duration == MIN_TD_VALUE_NOTIFICATION_CALL) {
+	if (is_call_or_alarm(duration)) {
 		if (boost_call_alarm_always) return true;
 	}
 	return false;
@@ -791,13 +804,13 @@ static ssize_t dw_haptics_store_duration(struct device *dev, struct device_attri
         if (val >= MIN_TD_VALUE_NOTIFICATION) {
                 notification_duration_detected = 1;
                 if (should_boost_call_alarm_always(val) || (smart_get_boost_on() && !should_not_boost())) { // raise voltage to boosted value in case of notification durations...
-			boost_voltage(true);
+			boost_voltage(true, is_call_or_alarm(val));
                 } else {
-			boost_voltage(false);
+			boost_voltage(false,false);
 		}
         } else {
                 notification_duration_detected = 0;
-		boost_voltage(false);
+		boost_voltage(false,false);
         }
 #endif
 	return count;
@@ -1605,7 +1618,7 @@ DECLARE_WORK(set_vibrate_work,set_vibrate_work_func);
 
 void set_vibrate(int val)
 {
-	boost_voltage(false);
+	boost_voltage(false,false);
 	if (g_enabler) {
 		set_val = val;
 		schedule_work(&set_vibrate_work);
@@ -1615,9 +1628,9 @@ EXPORT_SYMBOL(set_vibrate);
 
 void set_vibrate_boosted(int val) {
         if (smart_get_boost_on() && !should_not_boost()) { // raise voltage to boosted value in case of notification durations...
-		boost_voltage(true);
+		boost_voltage(true,is_call_or_alarm(val));
         } else {
-		boost_voltage(false);
+		boost_voltage(false,false);
 	}
 	if (g_enabler) {
 		set_val = val;
