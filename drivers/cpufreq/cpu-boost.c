@@ -25,6 +25,14 @@
 #include <linux/input.h>
 #include <linux/time.h>
 
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+#ifdef CONFIG_UCI
+#include <linux/uci/uci.h>
+static bool boost_eas = false;
+static int boost_eas_level = 1;
+static bool boost_eas_level_ext = false;
+#endif
+#endif
 struct cpu_sync {
 	int cpu;
 	unsigned int input_boost_min;
@@ -45,6 +53,47 @@ static bool input_boost_enabled;
 
 static unsigned int input_boost_ms = 200;
 module_param(input_boost_ms, uint, 0644);
+
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+static int dynamic_stune_boost;
+module_param(dynamic_stune_boost, uint, 0644);
+static bool stune_boost_active;
+static int boost_slot;
+#ifdef CONFIG_UCI
+static bool shown_debug_stune = false;
+static bool shown_debug_input = false;
+static void uci_user_listener(void) {
+	boost_eas = uci_get_user_property_int_mm("boost_eas", 1, 0, 1);
+	boost_eas_level = uci_get_user_property_int_mm("boost_eas_level", 1, 0, 3);
+	boost_eas_level_ext = uci_get_user_property_int_mm("boost_eas_level_ext", 0, 0, 1);
+	pr_info("%s [CLEANSLATE] stune uci user listener %d %d %d\n",__func__,boost_eas,boost_eas_level,boost_eas_level_ext);
+	shown_debug_stune = false;
+	shown_debug_input = false;
+}
+static int boost_map[4] = { 9, 13, 20, 30 };
+static int get_dynamic_stune_boost(void) {
+	int ret = 0;
+	if (boost_eas_level_ext) return dynamic_stune_boost;
+	ret = boost_map[boost_eas_level]; // 9 - 25;
+	if (!shown_debug_stune) {
+		shown_debug_stune = true;
+		pr_info("%s [CLEANSLATE] dynamic stune boost value %d\n",__func__,ret);
+	}
+	return ret;
+}
+static int input_ms_map[4] = { 60, 90, 120, 450 };
+static int get_input_boost_ms(void) {
+	int ret = 0;
+	if (!boost_eas || boost_eas_level_ext) return input_boost_ms;
+	ret = input_ms_map[boost_eas_level]; // 60 - 450 msec;
+	if (!shown_debug_input) {
+		shown_debug_input = true;
+		pr_info("%s [CLEANSLATE] input boost ms value %d\n",__func__,ret);
+	}
+	return ret;
+}
+#endif
+#endif /* CONFIG_DYNAMIC_STUNE_BOOST */
 
 static bool sched_boost_on_input;
 module_param(sched_boost_on_input, bool, 0644);
@@ -221,6 +270,14 @@ static void do_input_boost_rem(struct work_struct *work)
 		i_sync_info->input_boost_min = 0;
 	}
 
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+	/* Reset dynamic stune boost value to the default value */
+	if (stune_boost_active) {
+		reset_stune_boost("top-app", boost_slot);
+		stune_boost_active = false;
+	}
+#endif /* CONFIG_DYNAMIC_STUNE_BOOST */
+
 	/* Update policies for all online CPUs */
 	update_policy_online();
 
@@ -242,6 +299,13 @@ static int do_input_boost(void *data)
 	while (1) {
 		set_current_state(TASK_INTERRUPTIBLE);
 		schedule();
+
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+		if (stune_boost_active) {
+			reset_stune_boost("top-app", boost_slot);
+			stune_boost_active = false;
+		}
+#endif
 
 		if (kthread_should_stop())
 			break;
@@ -277,6 +341,21 @@ static int do_input_boost(void *data)
 			else
 				sched_boost_active = true;
 		}
+
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+#ifdef CONFIG_UCI
+		if (boost_eas || boost_eas_level_ext) {
+			ret = do_stune_boost("top-app", get_dynamic_stune_boost(), &boost_slot);
+			if (!ret)
+				stune_boost_active = true;
+		}
+#else
+		/* Set dynamic stune boost value */
+		ret = do_stune_boost("top-app", dynamic_stune_boost, &boost_slot);
+		if (!ret)
+			stune_boost_active = true;
+#endif
+#endif /* CONFIG_DYNAMIC_STUNE_BOOST */
 
 bail_incorrect_governor:
 		put_online_cpus();
@@ -318,7 +397,12 @@ static void cpuboost_input_event(struct input_handle *handle,
 			wake_up_process(up_task[i]);
 	}
 
+#ifdef CONFIG_UCI
+	queue_delayed_work(cpu_boost_wq, &input_boost_rem,
+					msecs_to_jiffies(get_input_boost_ms()));
+#else
 	queue_delayed_work(cpu_boost_wq, &input_boost_rem, msecs_to_jiffies(input_boost_ms));
+#endif
 
 	last_input_time = ktime_to_us(ktime_get());
 }
@@ -355,6 +439,11 @@ err2:
 
 static void cpuboost_input_disconnect(struct input_handle *handle)
 {
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+	/* Reset dynamic stune boost value to the default value */
+	reset_stune_boost("top-app", boost_slot);
+#endif /* CONFIG_DYNAMIC_STUNE_BOOST */
+
 	input_close_device(handle);
 	input_unregister_handle(handle);
 	kfree(handle);
@@ -431,6 +520,11 @@ static int cpu_boost_init(void)
 
 	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
 	ret = input_register_handler(&cpuboost_input_handler);
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+#ifdef CONFIG_UCI
+        uci_add_user_listener(uci_user_listener);
+#endif
+#endif
 
 	return ret;
 }
