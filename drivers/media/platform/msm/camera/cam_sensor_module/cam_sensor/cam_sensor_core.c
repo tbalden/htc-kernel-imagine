@@ -1079,9 +1079,6 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 		CAM_ERR(CAM_SENSOR, "power up the core is failed:%d", rc);
 		return rc;
 	}
-#ifdef CONFIG_UCI_NOTIFICATIONS
-	ntf_camera_started();
-#endif
 
 /* HTC_START */
 	CAM_INFO(CAM_SENSOR, "[DualCam] sensor_id : 0x%x , sensor_slave_addr : 0x%x",
@@ -1090,9 +1087,18 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 	if (s_ctrl->sensordata->slave_info.sensor_id == 0x0333 || s_ctrl->sensordata->slave_info.sensor_id == 0x0363) {
 		g_maincam_imx363_ctrl = s_ctrl;
 		CAM_INFO(CAM_SENSOR, "[DualCam] open camera : main-cam IMX363");
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		// report main cam only, to avoid face unlock front camera collision in use cases...
+		// TODO way to find out when face unlock is configured for front cam, and call this method if not faceunlock...
+		ntf_camera_started();
+#endif
 	} else if (s_ctrl->sensordata->slave_info.sensor_id == 0x0351) {
 		g_maincam_imx351_ctrl = s_ctrl;
 		CAM_INFO(CAM_SENSOR, "[DualCam] open camera : main-cam IMX351");
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		// report main cam only, to avoid face unlock front camera collision in use cases...
+		ntf_camera_started();
+#endif
 	} else if (s_ctrl->sensordata->slave_info.sensor_id == 0x4089 && s_ctrl->sensordata->slave_info.sensor_slave_addr == 0x20) {
 		g_frontcam_s5k4h9m_ctrl = s_ctrl;
 		CAM_INFO(CAM_SENSOR, "[DualCam] open camera : front-cam S5K4H9M");
