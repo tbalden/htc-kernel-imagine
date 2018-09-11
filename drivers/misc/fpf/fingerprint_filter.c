@@ -379,6 +379,10 @@ static int get_kad_start_after_proximity_left(void) {
 	return uci_get_user_property_int_mm("kad_start_after_proximity_left", kad_start_after_proximity_left, 0, 1);
 }
 #endif
+static int get_kad_pick_up_show(void) {
+	return uci_get_user_property_int_mm("kad_pick_up_show", 0, 0, 1);
+}
+
 static int get_kad_kcal_val(void) {
 	return uci_get_user_property_int_mm("kad_kcal_val", kad_kcal_val, 0, 255);
 }
@@ -693,6 +697,7 @@ static void fpf_presspwr(struct work_struct * fpf_presspwr_work) {
 			if (squeeze_reg_diff< 4*JIFFY_MUL ) goto exit;
 		}
 	}
+	pr_info("%s power press sync - screen_on: %d \n",__func__, screen_on);
 	input_event(fpf_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(fpf_pwrdev, EV_SYN, 0, 0);
 	msleep(FPF_PWRKEY_DUR);
@@ -1978,6 +1983,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 		msleep(get_squeeze_peek_halfseconds() * 500);
 	}
 	// screen still on and sqeueeze peek wait was not interrupted...
+	pr_info("%s screen_on %d squeeze_peek_wait %d interrupt_kad_peekmode_wait %d\n",__func__,screen_on,squeeze_peek_wait,interrupt_kad_peekmode_wait);
 	if (screen_on && squeeze_peek_wait) {
 		last_kad_screen_off_time = jiffies;
 		last_peek_timeout_screen_off_time = jiffies;
@@ -2862,6 +2868,14 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
                 pr_info("%s fpf ntf listener event %s %d %s\n",__func__,event,num_param,str_param);
         }
 
+	if (!strcmp(event,NTF_EVENT_AOD_GESTURE)) {
+		if (!screen_on && !proximity && get_kad_pick_up_show()) {
+			last_screen_event_timestamp = jiffies;
+			start_kad_running(1);
+			squeeze_peekmode_trigger();
+			fpf_pwrtrigger(0,__func__); // SCREEN ON
+		}
+	} else
 	if (!strcmp(event,NTF_EVENT_CAMERA_ON)) {
 		if (!!num_param) {
 			// camera on.. if KAD running, stop it, display is camera app!
