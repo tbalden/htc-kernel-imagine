@@ -30,6 +30,7 @@ enum notif_led_type {
 #define NTF_EVENT_INPUT "input"
 #define NTF_EVENT_WAKE_BY_USER "wake_by_user"
 #define NTF_EVENT_WAKE_BY_FRAMEWORK "wake_by_framework"
+#define NTF_EVENT_AOD_GESTURE "aod_gesture"
 #define NTF_EVENT_WAKE_EARLY "wake_early"
 #define NTF_EVENT_SLEEP_EARLY "sleep_early"
 #define NTF_EVENT_SLEEP "sleep"

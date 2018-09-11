@@ -320,6 +320,7 @@ static int fb_notifier_callback(
 void ntf_screen_aod_on(void) {
 //	wake_by_user = false;
 	pr_info("fpf ntf uci AOD on\n");
+	ntf_notify_listeners(NTF_EVENT_AOD_GESTURE,1,"on");
 }
 EXPORT_SYMBOL(ntf_screen_aod_on);
 
