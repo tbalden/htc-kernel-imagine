@@ -371,6 +371,8 @@ static int kad_three_finger_gesture = 1; // three finger gesture will wake KAD
 static int kad_start_after_proximity_left = 1; // start pending kad if leaving proximity
 static int kad_start_delay_halfseconds = 2; // how long KAD should wait before starting to avoid collision with notif sounds - min 1 max 4
 
+static int kad_running_for_aod_gesture = 0; // state, if KAD is initiated for aod gesture, repetition shouldn't be done
+
 static int kad_kcal_val = 135;
 static int kad_kcal_cont = 255;
 
@@ -400,7 +402,8 @@ static int get_kad_disable_fp_input(void) {
 	return uci_get_user_property_int_mm("kad_disable_fp_input", kad_disable_fp_input, 0, 1);
 }
 static int get_kad_disable_touch_input(void) {
-	return uci_get_user_property_int_mm("kad_disable_touch_input", kad_disable_touch_input, 0, 1);
+	// block if set to disable touch input, or is in aod gesture mode
+	return uci_get_user_property_int_mm("kad_disable_touch_input", kad_disable_touch_input, 0, 1) || kad_running_for_aod_gesture;
 }
 static int get_kad_three_finger_gesture(void) {
 	return uci_get_user_property_int_mm("kad_three_finger_gesture", kad_three_finger_gesture, 0, 1);
@@ -914,6 +917,7 @@ static void stop_kad_running(bool instant_sat_restore, const char* caller)
 		}
 	}
 	kad_running_for_kcal_only = 0;
+	kad_running_for_aod_gesture = 0;
 	mutex_unlock(&stop_kad_mutex);
 }
 
@@ -1222,17 +1226,21 @@ static int get_squeeze_peek_halfseconds(void) {
 
 
 DEFINE_MUTEX(start_kad_mutex);
-static void start_kad_running(int for_squeeze) {
+#define KAD_FOR_SQUEEZE 1
+#define KAD_FOR_AOD 2
+#define KAD_FOR_KAD 0
+static void start_kad_running(int origination) {
 	if (!mutex_trylock(&start_kad_mutex)) {
 		return;
 	}
 	pr_info("%s === ----------- start kad running --------- ==\n", __func__);
 	kad_running = 1;
-	kad_running_for_kcal_only = for_squeeze;
-	pr_info("%s kad - for squeeze: %d \n",__func__, for_squeeze);
+	kad_running_for_kcal_only = origination==KAD_FOR_SQUEEZE;
+	kad_running_for_aod_gesture = origination==KAD_FOR_AOD;
+	pr_info("%s kad - origination: %d \n",__func__, origination);
 	if (is_screen_locked()) {
-		if ((is_kad_on()&&get_kad_kcal())||(for_squeeze&&is_squeeze_peek_kcal(true))) {
-			schedule_work(&kcal_set_work);//kcal_internal_override_sat(128);
+		if ((is_kad_on()&&get_kad_kcal())||(kad_running_for_kcal_only&&is_squeeze_peek_kcal(true))) {
+			schedule_work(&kcal_set_work);
 			kcal_push_restore = 0;
 			queue_work(kcal_listener_wq, &kcal_listener_work);
 		}
@@ -1974,7 +1982,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 			if (squeeze_reg_diff<4*JIFFY_MUL) return;
 		}
 	}
-	if (kad_running && !kad_running_for_kcal_only) {
+	if (kad_running && !kad_running_for_kcal_only && !kad_running_for_aod_gesture) {
 		int count = smart_get_kad_halfseconds() * 2;
 		while (!interrupt_kad_peekmode_wait && !count--<=0) {
 			msleep(250);
@@ -1988,7 +1996,7 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 		last_kad_screen_off_time = jiffies;
 		last_peek_timeout_screen_off_time = jiffies;
 		fpf_pwrtrigger(0,__func__);
-		if (kad_running && !kad_running_for_kcal_only && !interrupt_kad_peekmode_wait) { // not interrupted, and kad mode peek.. see if re-schedule is needed...
+		if (kad_running && !kad_running_for_kcal_only && !kad_running_for_aod_gesture && !interrupt_kad_peekmode_wait) { // not interrupted, and kad mode peek.. see if re-schedule is needed...
 			kad_repeat_counter++;
 			if (should_kad_start() && kad_repeat_counter<smart_get_kad_repeat_times()) { // only reschedule if kad should still smart start...and counter is below times limit...
 				// alarm timer
@@ -2111,7 +2119,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 			register_input_event(__func__);
 			if (!screen_on && get_squeeze_peek()) {
 				last_screen_event_timestamp = jiffies;
-				start_kad_running(1);
+				start_kad_running(KAD_FOR_SQUEEZE);
 				squeeze_peekmode_trigger();
 			}
 			if (screen_on && squeeze_peek_wait) { // checking if short squeeze happening while peeking the screen with squeeze2peek...
@@ -2166,7 +2174,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 				register_input_event(__func__);
 				if (!screen_on && get_squeeze_peek()) {
 					last_screen_event_timestamp = jiffies;
-					start_kad_running(1);
+					start_kad_running(KAD_FOR_SQUEEZE);
 					squeeze_peekmode_trigger();
 				}
 				if (screen_on && squeeze_peek_wait) { // screen on and squeeze peek going on?
@@ -2232,7 +2240,7 @@ void register_squeeze(unsigned long timestamp, int vibration) {
 			if (!screen_on && get_squeeze_peek()) {
 				pr_info("%s squeeze call -- power onoff - PEEK MODE - PEEK wake: %d\n",__func__,stage);
 				last_screen_event_timestamp = jiffies;
-				start_kad_running(1);
+				start_kad_running(KAD_FOR_SQUEEZE);
 				squeeze_peekmode_trigger();
 			}
 			if (screen_on && squeeze_peek_wait) { // screen on and squeeze peek going on?
@@ -2313,7 +2321,7 @@ void do_kernel_ambient_display(void) {
 	if (uci_get_user_property_int_mm("kad_only_on_charger", kad_only_on_charger, 0, 1) && !ntf_is_charging()) return;
 
 	if (!screen_on && !kad_running) {
-		start_kad_running(0);
+		start_kad_running(KAD_FOR_KAD);
 		pr_info("%s kad -- power onoff - PEEK MODE - PEEK wake: %d\n",__func__,stage);
 		last_screen_event_timestamp = jiffies;
 		kad_first_one_finger_touch_time = 0;
@@ -2548,12 +2556,23 @@ static bool ts_input_filter(struct input_handle *handle,
 				filter_next_power_key_up = true;
 				return true;
 			} else {
-				filter_next_power_key_up = false;
+				if (value==1 && screen_on && kad_running && (!kad_running_for_kcal_only)) {
+					// in KAD / AOD KAD, filter power button, to avoid screen off... but stop KAD
+					filter_next_power_key_up = true;
+					last_screen_event_timestamp = jiffies;
+					squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
+					stop_kad_running(true,__func__);
+					register_input_event(__func__);
+					ts_poke();
+					return true;
+				} else {
+					filter_next_power_key_up = false;
+				}
 			}
 		}
 		if ((code == 115 || code == 114) && !screen_on && get_block_volume_key_in_pocket() && !ntf_is_in_call()) { // do not filter in call
 			pr_info("%s proximity ts_input volume key filter\n",__func__);
-			return true;
+			return true; // filter vol up/dn in proximity...
 		}
 	}
 #ifdef LOG_INPUT_EVENTS
@@ -2715,12 +2734,19 @@ skip_ts:
 						kad_first_one_finger_touch_time = 0;
 						kad_first_one_finger_done = 0;
 						if (time_diff < 50*JIFFY_MUL) { // double tap single finger happened, stop kad without waking...
-							// make timeout for kad
-							pr_info("%s kad first_one done == 1 DOUBLE TAP, interrupt kad and vibrate \n",__func__);
-							interrupt_kad_peekmode_wait = 1; // signal interruption for kad squeeze_peekmode work...
-							register_input_event(__func__); // stop flashlight...
-//							if (get_vib_strength()) // only vibrate if fp home button vibrates too...
+							if (!kad_running_for_aod_gesture) {
+								// make timeout for kad
+								pr_info("%s kad first_one done == 1 DOUBLE TAP, interrupt kad and vibrate \n",__func__);
+								interrupt_kad_peekmode_wait = 1; // signal interruption for kad squeeze_peekmode work...
+								register_input_event(__func__); // stop flashlight...
 								set_vibrate(20); 
+							} else {
+								last_screen_event_timestamp = jiffies;
+								squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
+								stop_kad_running(true,__func__);
+								register_input_event(__func__);
+								ts_poke();
+							}
 						}
 					}
 				} else {
@@ -2871,7 +2897,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 	if (!strcmp(event,NTF_EVENT_AOD_GESTURE)) {
 		if (!screen_on && !proximity && get_kad_pick_up_show()) {
 			last_screen_event_timestamp = jiffies;
-			start_kad_running(1);
+			start_kad_running(KAD_FOR_AOD);
 			squeeze_peekmode_trigger();
 			fpf_pwrtrigger(0,__func__); // SCREEN ON
 		}
