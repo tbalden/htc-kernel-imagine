@@ -373,8 +373,12 @@ static int kad_start_delay_halfseconds = 2; // how long KAD should wait before s
 
 static int kad_running_for_aod_gesture = 0; // state, if KAD is initiated for aod gesture, repetition shouldn't be done
 
+static int kad_kcal_sat = 128;
 static int kad_kcal_val = 135;
 static int kad_kcal_cont = 255;
+static int peek_kcal_sat = 128;
+static int peek_kcal_val = 254;
+static int peek_kcal_cont = 254;
 
 #ifdef CONFIG_FPF_KAD
 static int get_kad_start_after_proximity_left(void) {
@@ -385,11 +389,24 @@ static int get_kad_pick_up_show(void) {
 	return uci_get_user_property_int_mm("kad_pick_up_show", 0, 0, 1);
 }
 
+static int get_kad_kcal_sat(void) {
+	return uci_get_user_property_int_mm("kad_kcal_sat", kad_kcal_sat, 128, 383);
+}
 static int get_kad_kcal_val(void) {
-	return uci_get_user_property_int_mm("kad_kcal_val", kad_kcal_val, 0, 255);
+	return uci_get_user_property_int_mm("kad_kcal_val", kad_kcal_val, 128, 383);
 }
 static int get_kad_kcal_cont(void) {
-	return uci_get_user_property_int_mm("kad_kcal_cont", kad_kcal_cont, 150, 255);
+	return uci_get_user_property_int_mm("kad_kcal_cont", kad_kcal_cont, 128, 383);
+}
+
+static int get_peek_kcal_sat(void) {
+	return uci_get_user_property_int_mm("peek_kcal_sat", peek_kcal_sat, 128, 383);
+}
+static int get_peek_kcal_val(void) {
+	return uci_get_user_property_int_mm("peek_kcal_val", peek_kcal_val, 128, 383);
+}
+static int get_peek_kcal_cont(void) {
+	return uci_get_user_property_int_mm("peek_kcal_cont", peek_kcal_cont, 128, 383);
 }
 
 static int get_kad_kcal(void) {
@@ -648,10 +665,18 @@ static void kcal_set(struct work_struct * kcal_set_work)
 			bool done = false;
 			pr_info("%s kad override... SSSSSSSSSS   screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 			while (retry_count-->0) {
-				if (screen_on && kcal_internal_override(128,get_kad_kcal_val(),get_kad_kcal_cont(), kad_kcal_r, kad_kcal_g, kad_kcal_b)) {
-					kad_kcal_overlay_on = 1;
-					done = true;
-					break;
+				if (!kad_running_for_kcal_only && !kad_running_for_aod_gesture) {
+					if (screen_on && kcal_internal_override(get_kad_kcal_sat(),get_kad_kcal_val(),get_kad_kcal_cont(), kad_kcal_r, kad_kcal_g, kad_kcal_b)) {
+						kad_kcal_overlay_on = 1;
+						done = true;
+						break;
+					}
+				} else {
+					if (screen_on && kcal_internal_override(get_peek_kcal_sat(),get_peek_kcal_val(),get_peek_kcal_cont(), kad_kcal_r, kad_kcal_g, kad_kcal_b)) {
+						kad_kcal_overlay_on = 1;
+						done = true;
+						break;
+					}
 				}
 				msleep(10);
 			}
@@ -1983,12 +2008,15 @@ static void squeeze_peekmode(struct work_struct * squeeze_peekmode_work) {
 		}
 	}
 	if (kad_running && !kad_running_for_kcal_only && !kad_running_for_aod_gesture) {
-		int count = smart_get_kad_halfseconds() * 2;
+		int count = smart_get_kad_halfseconds() * 4;
 		while (!interrupt_kad_peekmode_wait && !count--<=0) {
-			msleep(250);
+			msleep(125);
 		}
 	} else {
-		msleep(get_squeeze_peek_halfseconds() * 500);
+		int count = get_squeeze_peek_halfseconds() * 4;
+		while (!interrupt_kad_peekmode_wait && !count--<=0) {
+			msleep(125);
+		}
 	}
 	// screen still on and sqeueeze peek wait was not interrupted...
 	pr_info("%s screen_on %d squeeze_peek_wait %d interrupt_kad_peekmode_wait %d\n",__func__,screen_on,squeeze_peek_wait,interrupt_kad_peekmode_wait);
@@ -2734,19 +2762,23 @@ skip_ts:
 						kad_first_one_finger_touch_time = 0;
 						kad_first_one_finger_done = 0;
 						if (time_diff < 50*JIFFY_MUL) { // double tap single finger happened, stop kad without waking...
-							if (!kad_running_for_aod_gesture) {
+//							if (!kad_running_for_aod_gesture) 
+							{
 								// make timeout for kad
 								pr_info("%s kad first_one done == 1 DOUBLE TAP, interrupt kad and vibrate \n",__func__);
 								interrupt_kad_peekmode_wait = 1; // signal interruption for kad squeeze_peekmode work...
 								register_input_event(__func__); // stop flashlight...
 								set_vibrate(20); 
-							} else {
+							} 
+#if 0
+							else {
 								last_screen_event_timestamp = jiffies;
 								squeeze_peek_wait = 0; // interrupt peek wait, touchscreen was interacted, don't turn screen off after peek time over...
 								stop_kad_running(true,__func__);
 								register_input_event(__func__);
 								ts_poke();
 							}
+#endif
 						}
 					}
 				} else {
