@@ -843,7 +843,9 @@ static ssize_t dw_haptics_store_activate(struct device *dev, struct device_attri
 	mutex_lock(&pDW->play_lock);
 	if (val && (pDW->vibTime > 0)) {
 #ifdef CONFIG_UCI_NOTIFICATIONS
-		ntf_vibration(pDW->vibTime);
+		if (pDW->vibTime <= HAP_MAX_PLAY_TIME_MS) { // skip special clickity button vibs...
+			ntf_vibration(pDW->vibTime);
+		}
 #endif
 		pr_info("%s [VIB] atomic set 1...\n",__func__);
 		atomic_set(&pDW->state, 1);
