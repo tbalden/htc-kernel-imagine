@@ -380,6 +380,13 @@ static int peek_kcal_sat = 128;
 static int peek_kcal_val = 254;
 static int peek_kcal_cont = 254;
 
+static int kad_kcal_r = 254;
+static int kad_kcal_g = 254;
+static int kad_kcal_b = 254;
+static int peek_kcal_r = 254;
+static int peek_kcal_g = 254;
+static int peek_kcal_b = 254;
+
 #ifdef CONFIG_FPF_KAD
 static int get_kad_start_after_proximity_left(void) {
 	return uci_get_user_property_int_mm("kad_start_after_proximity_left", kad_start_after_proximity_left, 0, 1);
@@ -401,6 +408,15 @@ static int get_kad_kcal_val(void) {
 static int get_kad_kcal_cont(void) {
 	return uci_get_user_property_int_mm("kad_kcal_cont", kad_kcal_cont, 128, 383);
 }
+static int get_kad_kcal_r(void) {
+	return uci_get_user_property_int_mm("kad_kcal_r", kad_kcal_r, 40, 256);
+}
+static int get_kad_kcal_g(void) {
+	return uci_get_user_property_int_mm("kad_kcal_g", kad_kcal_g, 40, 256);
+}
+static int get_kad_kcal_b(void) {
+	return uci_get_user_property_int_mm("kad_kcal_b", kad_kcal_b, 40, 256);
+}
 
 static int get_peek_kcal_sat(void) {
 	return uci_get_user_property_int_mm("peek_kcal_sat", peek_kcal_sat, 128, 383);
@@ -410,6 +426,15 @@ static int get_peek_kcal_val(void) {
 }
 static int get_peek_kcal_cont(void) {
 	return uci_get_user_property_int_mm("peek_kcal_cont", peek_kcal_cont, 128, 383);
+}
+static int get_peek_kcal_r(void) {
+	return uci_get_user_property_int_mm("peek_kcal_r", peek_kcal_r, 40, 256);
+}
+static int get_peek_kcal_g(void) {
+	return uci_get_user_property_int_mm("peek_kcal_g", peek_kcal_g, 40, 256);
+}
+static int get_peek_kcal_b(void) {
+	return uci_get_user_property_int_mm("peek_kcal_b", peek_kcal_b, 40, 256);
 }
 
 static int get_kad_kcal(void) {
@@ -458,9 +483,6 @@ static int smart_get_kad_repeat_period_sec(void) {
 
 
 
-static int kad_kcal_r = 150;
-static int kad_kcal_g = 150;
-static int kad_kcal_b = 254;
 
 int is_kad_on(void) {
 #ifdef CONFIG_FPF_KAD
@@ -673,13 +695,13 @@ static void kcal_set(struct work_struct * kcal_set_work)
 			pr_info("%s kad override... SSSSSSSSSS   screen %d kad %d overlay_on %d backed_up %d need_restore %d\n",__func__, screen_on, kad_running, kad_kcal_overlay_on, kad_kcal_backed_up, needs_kcal_restore_on_screen_on);
 			while (retry_count-->0) {
 				if (!kad_running_for_kcal_only && !kad_running_for_aod_gesture) {
-					if (screen_on && kcal_internal_override(get_kad_kcal_sat(),get_kad_kcal_val(),get_kad_kcal_cont(), kad_kcal_r, kad_kcal_g, kad_kcal_b)) {
+					if (screen_on && kcal_internal_override(get_kad_kcal_sat(),get_kad_kcal_val(),get_kad_kcal_cont(), get_kad_kcal_r(), get_kad_kcal_g(), get_kad_kcal_b())) {
 						kad_kcal_overlay_on = 1;
 						done = true;
 						break;
 					}
 				} else {
-					if (screen_on && kcal_internal_override(get_peek_kcal_sat(),get_peek_kcal_val(),get_peek_kcal_cont(), kad_kcal_r, kad_kcal_g, kad_kcal_b)) {
+					if (screen_on && kcal_internal_override(get_peek_kcal_sat(),get_peek_kcal_val(),get_peek_kcal_cont(), get_peek_kcal_r(), get_peek_kcal_g(), get_peek_kcal_b())) {
 						kad_kcal_overlay_on = 1;
 						done = true;
 						break;

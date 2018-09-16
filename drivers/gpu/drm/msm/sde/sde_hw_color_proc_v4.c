@@ -176,10 +176,10 @@ static bool override = false;
 static int stored_sat = 0;
 static int stored_val = 0;
 static int stored_cont = 0;
-//static int stored_r = 0;
-//static int stored_g = 0;
-//static int stored_b = 0;
-//static int stored_enable = 0;
+static int stored_r = 0;
+static int stored_g = 0;
+static int stored_b = 0;
+static int stored_enable = 0;
 
 extern void kcal_force_update(void);
 
@@ -236,6 +236,10 @@ void sde_setup_dspp_pccv4(struct sde_hw_dspp *ctx, void *cfg)
 		sat = stored_sat;
 		cont = stored_cont;
 		val = stored_val;
+		r = stored_r;
+		g = stored_g;
+		b = stored_b;
+		enable = 1;
 	}
 #endif
 	if (!hw_cfg->payload) {
@@ -373,6 +377,10 @@ int kcal_internal_override(int kcal_sat, int kcal_val, int kcal_cont, int r, int
 		stored_sat = kcal_sat;
 		stored_val = kcal_val;
 		stored_cont = kcal_cont;
+		stored_r = r;
+		stored_g = g;
+		stored_b = b;
+		stored_enable = 1;
 		override = true;
 	}
 	mutex_unlock(&kcal_int_lock);
