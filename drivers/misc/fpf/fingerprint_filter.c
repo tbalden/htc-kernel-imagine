@@ -471,10 +471,10 @@ int is_kad_on(void) {
 	return 0;
 }
 
-int last_screen_lock_check_was_false = 0;
+static int last_screen_lock_check_was_false = 0;
 
 
-bool is_screen_locked(void) {
+static bool is_screen_locked(void) {
 	int lock_timeout_sec = uci_get_sys_property_int_mm("lock_timeout", 0, 0, 1900);
 	int locked = uci_get_sys_property_int_mm("locked", 1, 0, 1);
 	int time_passed = get_global_seconds() - last_screen_off_seconds;
@@ -494,11 +494,14 @@ bool is_screen_locked(void) {
 	return false;
 }
 
+// if effectively kad starts from leaving proximity / lock this should be set true. use it to block AOD gesture overriding KAD feature...
+static bool kad_started_leaving_proximity_or_locked = false;
+
 /**
 * determines if kad should start in current stage
 * Will store kad_should_start_on_uci_sys_change = 1 if it's blocked by proximity/lock screen not on yet...
 */
-int should_kad_start(void) {
+static int should_kad_start(void) {
 #ifdef CONFIG_FPF_KAD
 	if (fpf_ringing || fpf_screen_waking_app) return 0;
 	if (uci_get_user_property_int_mm("kad_on", kad_on, 0, 1)) {
@@ -512,6 +515,7 @@ int should_kad_start(void) {
 				if (get_kad_start_after_proximity_left()) kad_should_start_on_uci_sys_change = 1;
 				return 0;
 			} else {
+				if (kad_should_start_on_uci_sys_change) kad_started_leaving_proximity_or_locked = true;
 				kad_should_start_on_uci_sys_change = 0;
 				return 1;
 			}
@@ -933,6 +937,7 @@ static void stop_kad_running(bool instant_sat_restore, const char* caller)
 	pr_info("%s %s ----------- stop kad running ---------\n",__func__,caller);
 	ntf_block_camera(false);
 	kad_should_start_on_uci_sys_change = 0;
+	kad_started_leaving_proximity_or_locked = false;
 	if (kad_running) {
 		kad_running = 0;
 		if (instant_sat_restore) {
@@ -2942,10 +2947,13 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 
 	if (!strcmp(event,NTF_EVENT_AOD_GESTURE)) {
 		if (!screen_on && !proximity && get_kad_pick_up_show()) {
-			last_screen_event_timestamp = jiffies;
-			start_kad_running(KAD_FOR_AOD);
-			squeeze_peekmode_trigger();
-			fpf_pwrtrigger(0,__func__); // SCREEN ON
+			if (!kad_should_start_on_uci_sys_change && !kad_started_leaving_proximity_or_locked) { 
+			// only start AOD gesture peek, if not already waiting for proximity being left for a pending KAD, or not already started from that scenario...
+				last_screen_event_timestamp = jiffies;
+				start_kad_running(KAD_FOR_AOD);
+				squeeze_peekmode_trigger();
+				fpf_pwrtrigger(0,__func__); // SCREEN ON
+			}
 		}
 	} else
 	if (!strcmp(event,NTF_EVENT_CAMERA_ON)) {
