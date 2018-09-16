@@ -66,6 +66,8 @@ static int flash_blink_wait_inc_max = DEFAULT_WAIT_INC_MAX;
 static int haptic_mode = 1; // 0 - always blink, 1 - only blink with haptic vibration notifications
 static int flash_only_face_down = 1;
 
+static bool flash_start_queued = false;
+
 static int get_flash_ignore_vibration(void) {
 	return uci_get_user_property_int_mm("flash_ignore_vibration", 0, 0, 1);
 }
@@ -524,6 +526,7 @@ void do_flash_blink(void) {
 			ktime_to_timeval(wakeup_time).tv_sec);
 
 			if (alarm_try_to_cancel(&flash_blink_rtc)>=0) { // stop pending alarm...
+				flash_start_queued = true;
 				alarm_start_relative(&flash_blink_rtc, wakeup_time); // start new...
 			}
 
@@ -563,6 +566,7 @@ static void flash_start_blink_work_func(struct work_struct *work)
 			alarm_try_to_cancel(&flash_blink_rtc); // stop pending alarm...
 			currently_blinking = 1;
 			pr_info("%s blink queue work... #1\n",__func__);
+			flash_start_queued = true;
 			queue_work(flash_blink_workqueue, &flash_blink_work);
 			in_no_flash_long_alarm_wake_time = false;
 		}
@@ -585,7 +589,6 @@ static void flash_start_blink_work_func(struct work_struct *work)
 	}
 }
 
-static bool flash_start_queued = false;
 
 static void flash_stop_blink_work_func(struct work_struct *work)
 {
@@ -633,6 +636,7 @@ static void flash_blink_work_func(struct work_struct *work)
 {
 	pr_info("%s [flashwake] flash_blink work executing... calling do_flash_blink, set smp to -1...\n",__func__);
 	smp_processor = -1; // signal that work started here, no need to wake idle cpus...
+	flash_start_queued = true; // force settings this if async work is still
 	do_flash_blink();
 }
 
@@ -663,6 +667,7 @@ static enum alarmtimer_restart flash_blink_rtc_callback(struct alarm *al, ktime_
 		pr_info("%s [flashwake] flash_blink cpu %d\n",__func__, smp_processor);
 
 		// queue actual flash work on current CPU for avoiding sleeping CPU...
+		flash_start_queued = true;
 		queue_work_on(smp_processor,flash_blink_workqueue, &flash_blink_work);
 
 		wakeup_time_unidle = ktime_add_us(curr_time,
