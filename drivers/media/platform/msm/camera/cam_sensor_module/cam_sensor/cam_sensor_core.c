@@ -674,6 +674,14 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 	return rc;
 }
 
+#ifdef CONFIG_UCI_NOTIFICATIONS
+static bool block_camera = false;
+void ntf_block_camera(bool val) {
+	block_camera = val;
+}
+EXPORT_SYMBOL(ntf_block_camera);
+#endif
+
 int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 	void *arg)
 {
@@ -808,6 +816,13 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			rc = -EINVAL;
 			goto release_mutex;
 		}
+#ifdef CONFIG_UCI_NOTIFICATIONS
+		if (block_camera) {
+			CAM_ERR(CAM_SENSOR, "ntf uci: Device is already acquired");
+			rc = -EINVAL;
+			goto release_mutex;
+		}
+#endif
 		rc = copy_from_user(&sensor_acq_dev,
 			(void __user *) cmd->handle, sizeof(sensor_acq_dev));
 		if (rc < 0) {
@@ -1090,14 +1105,18 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 #ifdef CONFIG_UCI_NOTIFICATIONS
 		// report main cam only, to avoid face unlock front camera collision in use cases...
 		// TODO way to find out when face unlock is configured for front cam, and call this method if not faceunlock...
-		ntf_camera_started();
+		if (!block_camera) {
+			ntf_camera_started();
+		}
 #endif
 	} else if (s_ctrl->sensordata->slave_info.sensor_id == 0x0351) {
 		g_maincam_imx351_ctrl = s_ctrl;
 		CAM_INFO(CAM_SENSOR, "[DualCam] open camera : main-cam IMX351");
 #ifdef CONFIG_UCI_NOTIFICATIONS
 		// report main cam only, to avoid face unlock front camera collision in use cases...
-		ntf_camera_started();
+		if (!block_camera) {
+			ntf_camera_started();
+		}
 #endif
 	} else if (s_ctrl->sensordata->slave_info.sensor_id == 0x4089 && s_ctrl->sensordata->slave_info.sensor_slave_addr == 0x20) {
 		g_frontcam_s5k4h9m_ctrl = s_ctrl;

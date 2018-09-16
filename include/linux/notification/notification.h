@@ -82,6 +82,7 @@ extern void ntf_kad_wake(void);
 // camera on/off, to avoid display of KAD or other ntf services
 extern void ntf_camera_started(void);
 extern void ntf_camera_stopped(void);
+extern void ntf_block_camera(bool val);
 
 
 // AOD

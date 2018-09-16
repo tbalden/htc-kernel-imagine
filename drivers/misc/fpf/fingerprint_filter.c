@@ -388,6 +388,9 @@ static int get_kad_start_after_proximity_left(void) {
 static int get_kad_pick_up_show(void) {
 	return uci_get_user_property_int_mm("kad_pick_up_show", 0, 0, 1);
 }
+static int get_kad_pick_up_block_camera(void) {
+	return uci_get_user_property_int_mm("kad_pick_up_block_camera", 0, 0, 1);
+}
 
 static int get_kad_kcal_sat(void) {
 	return uci_get_user_property_int_mm("kad_kcal_sat", kad_kcal_sat, 128, 383);
@@ -928,6 +931,7 @@ static void stop_kad_running(bool instant_sat_restore, const char* caller)
 		return;
 	}
 	pr_info("%s %s ----------- stop kad running ---------\n",__func__,caller);
+	ntf_block_camera(false);
 	kad_should_start_on_uci_sys_change = 0;
 	if (kad_running) {
 		kad_running = 0;
@@ -1262,6 +1266,14 @@ static void start_kad_running(int origination) {
 	kad_running = 1;
 	kad_running_for_kcal_only = origination==KAD_FOR_SQUEEZE;
 	kad_running_for_aod_gesture = origination==KAD_FOR_AOD;
+	if (origination==KAD_FOR_SQUEEZE) { // squeeze peek should always block camera
+		ntf_block_camera(true);
+	}
+	if (origination==KAD_FOR_AOD) {
+		if (get_kad_pick_up_block_camera()) { // block face unlock camera?
+			ntf_block_camera(true);
+		}
+	}
 	pr_info("%s kad - origination: %d \n",__func__, origination);
 	if (is_screen_locked()) {
 		if ((is_kad_on()&&get_kad_kcal())||(kad_running_for_kcal_only&&is_squeeze_peek_kcal(true))) {
@@ -2393,10 +2405,12 @@ static void kernel_ambient_display_internal(bool led_intercepted) {
 	}
 }
 void kernel_ambient_display(void) {
+	ntf_block_camera(true);
 	kernel_ambient_display_internal(false);
 }
 EXPORT_SYMBOL(kernel_ambient_display);
 void kernel_ambient_display_led_based(void) {
+	ntf_block_camera(true);
 	kernel_ambient_display_internal(true);
 }
 EXPORT_SYMBOL(kernel_ambient_display_led_based);
@@ -3000,6 +3014,9 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 			kcal_internal_restore(true);
 		}
 #endif
+		if (!kad_running && !kad_running_for_kcal_only) {
+			ntf_block_camera(false);
+		}
         } else
         if (!strcmp(event,NTF_EVENT_PROXIMITY)) {
 		proximity = !!num_param;
