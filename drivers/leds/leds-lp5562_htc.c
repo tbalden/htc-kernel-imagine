@@ -97,7 +97,6 @@ static int probe_finished = 0;
 
 static int bln_switch = 1; // 0 - off / 1 - on
 static int bln_no_charger_switch = 1; // 0 - only do BLN when on charger / 1 - BLN when not on charger
-static int bln_ignore_vibration = 0; // 0 - detect vib pattern for notifications / 1 - do not start notification on vibration
 static int bln_number = BUTTON_BLINK_NUMBER_DEFAULT; // infinite = 0 - number of max button blinks when not on charger
 static int bln_speed = BUTTON_BLINK_SPEED_DEFAULT;
 static int bln_dim_blink = 0; // continue quarter strength blinking after bln_number passed blinking
@@ -124,9 +123,6 @@ static int colored_charge_level_2 = 95;
 static int get_bln_switch(void) {
 	if (!vk_present) return 0;
 	return uci_get_user_property_int_mm("bln", bln_switch, 0, 1);
-}
-static int get_bln_ignore_vibration(void) {
-	return uci_get_user_property_int_mm("bln_ignore_vibration", bln_ignore_vibration, 0, 1);
 }
 static int get_bln_no_charger_switch(void) {
 	return uci_get_user_property_int_mm("bln_no_charger_switch", bln_no_charger_switch, 0, 1);
@@ -1543,22 +1539,6 @@ static void led_multi_color_charge_level(int level, bool force) {
 	}
 }
 
-// handling haptic notifications if enabled to register notifications even when RGB led is already blinking, or on charger
-static unsigned long last_haptic_jiffies = 0;
-static int last_value = 0;
-static unsigned long MAX_DIFF = 200 * JIFFY_MUL;
-static unsigned long MAX_DIFF_LONG_VIB = 310 * JIFFY_MUL;
-
-#define FINGERPRINT_VIB_TIME_EXCEPTION 40
-#define ALARM_VIB_TIME_EXCEPTION 500
-#define CALL_VIB_TIME_EXCEPTION 1000
-#define SQUEEZE_VIB_TIME_EXCEPTION 15
-#define SQUEEZE_VIB_TIME_EXCEPTION_BASE_2 20
-#define DOUBLETAP_VIB_TIME_EXCEPTION 25
-
-
-#define STACK_LENGTH 10
-
 //extern void register_squeeze_wake(int nanohub_flag, int vibrator_flag, unsigned long timestamp, int init_event_flag);
 extern void register_squeeze(unsigned long timestamp, int vibration);
 
@@ -1592,112 +1572,6 @@ static bool should_start_pulse_blink_on_charger(void) {
 	return ret;
 }
 
-
-// if a single haptic vibration was last time interpreted as notif set this true
-// .. based on this next such exact vibration length will be skipped to be interpreted as notif avoiding doubles...
-static bool single_vibration_interpreted_as_notif = false;
-
-// TODO rewrite using ntf listener instead
-int register_haptic(int value)
-{
-	bool vib_notif_pattern_detected = false;
-	unsigned long stack_entries[STACK_LENGTH];
-	struct stack_trace trace = {
-		.nr_entries = 0,
-		.entries = &stack_entries[0],
-
-		.max_entries = STACK_LENGTH,
-
-		/* How many "lower entries" to skip. */
-		.skip = 0
-	};
-	unsigned int diff_jiffies = jiffies - last_haptic_jiffies;
-	last_haptic_jiffies = jiffies;
-	I("%s %d - jiffies diff %u \n",__func__,value, diff_jiffies);
-
-//	if this exceptional time is used, it means, fingerprint scanner vibrated with proxomity sensor detection on
-//	and with unregistered finger, so no wake event. In this case, don't start blinking, not a notif, just return
-//	same with squeeze vibration time value.
-
-	save_stack_trace(&trace);
-	//WARN_ON(1);
-
-	if (value == DOUBLETAP_VIB_TIME_EXCEPTION) {
-		register_input_event(__func__);
-		return value;
-	}
-	if (value == CALL_VIB_TIME_EXCEPTION || value == ALARM_VIB_TIME_EXCEPTION) {
-		register_input_event(__func__);
-		stop_kernel_ambient_display(true);
-		return value;
-	}
-	if (value == FINGERPRINT_VIB_TIME_EXCEPTION) {
-		int vib_strength = register_fp_vibration();
-		//register_input_event(); // do not register here as long as it's not sure that it actually will wake the device or is just a nonwaking wrong FP scan double vib feedback
-		if (vib_strength > 0 && vib_strength<=FINGERPRINT_VIB_TIME_EXCEPTION*2) return vib_strength/2; else return vib_strength>0?FINGERPRINT_VIB_TIME_EXCEPTION:0;
-	}
-	if (value == SQUEEZE_VIB_TIME_EXCEPTION || value == SQUEEZE_VIB_TIME_EXCEPTION_BASE_2) {
-		last_value = value;
-//		register_squeeze_wake(0,1,jiffies,0);
-		register_squeeze(jiffies,1);
-		return value;
-	}
-
-	if (screen_on && ntf_wake_by_user()) return value;
-
-	// checking repetition of same length vibs
-	if (last_value == value) {
-		if ((value > 500 && diff_jiffies < MAX_DIFF_LONG_VIB) || diff_jiffies < MAX_DIFF) {
-			if (single_vibration_interpreted_as_notif) {
-				single_vibration_interpreted_as_notif = false;
-			} else {
-				vib_notif_pattern_detected = true;
-				if (value <= 200) {
-					short_vib_notif = 1;
-				} else {
-					short_vib_notif = 0;
-				}
-			}
-		} else {
-			// if same length but time diff too long, check for single vibration patter over a 100 msec length...
-			if (value>=100) {
-				single_vibration_interpreted_as_notif = true;
-				vib_notif_pattern_detected = true;
-			} else {
-				single_vibration_interpreted_as_notif = false;
-			}
-		}
-	} else {
-		// checking first time vib length, if over a length, interpret as notif
-		if (value>=100) {
-			single_vibration_interpreted_as_notif = true;
-			vib_notif_pattern_detected = true;
-		} else {
-			single_vibration_interpreted_as_notif = false;
-		}
-	}
-
-	if (vib_notif_pattern_detected) {
-		if (!get_bln_ignore_vibration()) {
-			if (should_start_bln()) {
-				// store haptic blinking, so if ambient display blocks the bln, later in BLANK screen off, still it can be triggered
-				bln_on_screenoff = 1;
-				pr_info("%s kad bln_on_screenoff %d\n", __func__, bln_on_screenoff);
-				if (!is_kernel_ambient_display() && !screen_on) queue_work(g_vk_work_queue, &vk_blink_work);
-			}
-		}
-
-		if (should_start_pulse_blink_on_charger()) {
-			charging_notification_occured_for_rgb = 1;
-			rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
-		}
-		kernel_ambient_display();
-	}
-	last_value = value;
-	return value;
-}
-
-EXPORT_SYMBOL(register_haptic);
 
 extern void set_vibrate(int value);
 extern void set_suspend_booster(int value);
@@ -1805,7 +1679,9 @@ static void lp5562_color_blink(struct i2c_client *client, uint8_t red, uint8_t g
 			ntf_led_blink(NTF_LED_GREEN,1);
 //			flash_blink(false);
 		}
-		kernel_ambient_display_led_based(); // TODO move to ntf -> fpf
+		if (!screen_on) {
+			kernel_ambient_display_led_based(); // TODO move to ntf -> fpf
+		}
 		if (!get_bln_pulse_rgb_blink()) {
 		green = green / (get_bln_rgb_blink_light_level()*smart_get_pulse_dimming());
 #endif
@@ -3071,7 +2947,9 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 				charging_notification_occured_for_rgb = 1;
 				rgb_blink_on_charge_async(); // call charging level based speedy pulse blink
 			}
-			kernel_ambient_display(); // TODO move to fpf!
+			if (!screen_on) {
+				kernel_ambient_display(); // TODO move to fpf!
+			}
 		}
 	} else
         if (!strcmp(event,NTF_EVENT_CHARGE_LEVEL)) {
