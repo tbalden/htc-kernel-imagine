@@ -209,6 +209,19 @@ int parse_uci_cfg_file(const char *file_name, bool sys) {
 			pr_err("uci file being deleted\n"); 
 			return -2;
 		}
+		if (sys) { // check file age for sys cfg. Older files are from before reboot completed or power up,
+			// may contain data that confuses functionality, like uci proximity (power press blocking...)
+			struct timespec mtime = inode->i_mtime;
+			struct timespec delta_t, now;
+			getnstimeofday(&now);
+			delta_t = timespec_sub(now, mtime);
+			if (delta_t.tv_sec > 3) {
+				pr_err("%s uci sys file too old, don't parse, return error. Age: %d\n",__func__,(int)delta_t.tv_sec);
+				return -3;
+			} else {
+				pr_info("%s uci sys file age ok, do parse. Age: %d\n",__func__,(int)delta_t.tv_sec);
+			}
+		}
 
 		buf=(char *) kmalloc(fsize+1,GFP_KERNEL);
 		buf_o=buf;
@@ -378,6 +391,14 @@ void parse_uci_sys_cfg_file(void) {
 		rc = parse_uci_cfg_file(UCI_SYS_FILE,true);
 		count++;
 		if (count>5) break;
+	}
+	if (rc==-3) {
+		// file too old. broadcast sys listeners, to get default values instead of outdated parsed state, till a parse is successful..
+		int i=0;
+		sys_cfg_parsed = false;
+		for (;i<sys_listener_counter;i++) {
+			(*sys_listeners[i])();
+		}
 	}
 	if (!rc) { 
 		int i=0;
