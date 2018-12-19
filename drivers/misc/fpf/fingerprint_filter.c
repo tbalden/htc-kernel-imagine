@@ -1433,10 +1433,8 @@ static void ts_track_event_gather(int type, int code, int value) {
 	ts_track_size++;
 	pr_info("%s ---- add Input: %d %d %d Size: %d\n",__func__,type,code,value,ts_track_size);
 }
-static unsigned long ts_track_event_run_start_time = 0;
 static void ts_track_event_run(void) {
 	int i;
-	ts_track_event_run_start_time = jiffies;
 	for (i=0;i<ts_track_size;i++) {
 		input_event(ts_device,ts_track_type[i],ts_track_code[i],ts_track_value[i]);
 	}
@@ -1468,8 +1466,7 @@ static int ts_track_event_check(int type, int code, int value) {
 	return 0;
 }
 static int dump_count = 0;
-static int ts_track_event_complete(bool failure_resets_event_counter) {
-	unsigned int track_time = jiffies - ts_track_event_run_start_time;
+static int ts_track_event_complete(void) {
 	pr_info("%s ???? checking | size %d | found %d \n",__func__, ts_track_size, ts_track_intercepted);
 	if (dump_count++ % 20 && ts_track_size <4) {
 		int i = 0;
@@ -1478,13 +1475,6 @@ static int ts_track_event_complete(bool failure_resets_event_counter) {
 			pr_info("%s ----# Input left [%d]: %d %d %d \n",__func__, i, ts_track_type[i], ts_track_code[i], ts_track_value[i]);
 		}
 		dump_count = 0;
-	}
-	if (track_time>100*JIFFY_MUL) {
-		pr_info("%s track timeout diff %ud\n",__func__, track_time);
-		if (failure_resets_event_counter) {
-			ts_emulated_events_in_progress = 0;
-		}
-		return -1; // time out happened
 	}
 	return ts_track_intercepted == ts_track_size;
 }
@@ -1559,7 +1549,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 				if (y_steps%10==0) {
 					pr_info("%s ts_input squeeze emulation step = %d POS_Y = %d \n",__func__,y_steps, 1000+y_diff);
 				}
-				while(!ts_track_event_complete(false)) {
+				while(!ts_track_event_complete()) {
 					diff_time = jiffies - start_time;
 					if (diff_time>4*JIFFY_MUL) {
 						pr_info("%s breaking incomplete check cycle ts_check\n",__func__);
@@ -1581,7 +1571,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 			ts_track_event_run();
 			msleep(1);
 
-			while(!ts_track_event_complete(false)) {
+			while(!ts_track_event_complete()) {
 				msleep(1);
 				empty_check_count++;
 				if (empty_check_count%100==30) {
@@ -1601,7 +1591,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 #endif
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 1\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1611,7 +1601,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, -1);
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 2\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1629,7 +1619,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 #endif
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 1\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1639,7 +1629,7 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, -1);
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 2\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1653,7 +1643,6 @@ static void ts_poke_emulate(struct work_struct * ts_poke_emulate_work) {
 		}
 	}
 	while (ts_emulated_events_in_progress>10) {
-		ts_track_event_complete(true);
 		msleep(1);
 	}
 	msleep(20);
@@ -1840,7 +1829,7 @@ static void ts_scroll_emulate(int down, int full) {
 				if (y_steps%10==0) {
 					pr_info("%s ts_input squeeze emulation step = %d POS_Y = %d \n",__func__,y_steps, 1000+y_diff);
 				}
-				while(!ts_track_event_complete(false)) {
+				while(!ts_track_event_complete()) {
 					diff_time = jiffies - start_time;
 					if (diff_time>4*JIFFY_MUL) {
 						pr_info("%s breaking incomplete check cycle ts_check\n",__func__);
@@ -1862,7 +1851,7 @@ static void ts_scroll_emulate(int down, int full) {
 			ts_track_event_run();
 			msleep(1);
 
-			while(!ts_track_event_complete(false)) {
+			while(!ts_track_event_complete()) {
 				msleep(1);
 				empty_check_count++;
 				if (empty_check_count%100==30) {
@@ -1882,7 +1871,7 @@ static void ts_scroll_emulate(int down, int full) {
 #endif
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 1\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1892,7 +1881,7 @@ static void ts_scroll_emulate(int down, int full) {
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, -1);
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 2\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1910,7 +1899,7 @@ static void ts_scroll_emulate(int down, int full) {
 #endif
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 1\n",__func__);
 						diff_time = jiffies - start_time;
@@ -1920,7 +1909,7 @@ static void ts_scroll_emulate(int down, int full) {
 					ts_track_event_gather(EV_ABS, ABS_MT_TRACKING_ID, -1);
 					ts_track_event_gather(EV_SYN, 0, 0);
 					ts_track_event_run();
-					while(!ts_track_event_complete(false)) {
+					while(!ts_track_event_complete()) {
 						msleep(1);
 						pr_info("%s ts_check || fallback wait 2\n",__func__);
 						diff_time = jiffies - start_time;
@@ -2693,7 +2682,7 @@ static bool ts_input_filter(struct input_handle *handle,
 
 	// if in track mode, only let through events emulated...
 	if (mutex_is_locked(&squeeze_swipe_lock)) {
-		if (!ts_track_event_complete(false)) {
+		if (!ts_track_event_complete()) {
 			return !ts_track_event_check(type,code,value);
 		}
 	}
