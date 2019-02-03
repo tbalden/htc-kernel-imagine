@@ -2753,14 +2753,38 @@ skip_ts:
 			}
 		} else if (kad_running && !kad_running_for_kcal_only && get_kad_disable_touch_input() && (type!=EV_KEY || ts_is_touchscreen_key_event(type,code))) {
 			// if kad running and filtering on... filter it...
-			pr_info("%s filter branch...\n",__func__);
 			if (code != 158 && code !=580) { // non virtual key (BACK/APPSWITCH), but real panel event: 
 				//!ts_is_touchscreen_key_event(type,code)) { // do not filter all key events of TS, those are not virtual keys in every case
 				filtering_ts_event_last_event = jiffies;
 				filtered_ts_event = true;
 				filter_event = true;
 			}
+			pr_info("%s filter branch... kad_first_one_finger_done %d kad_finger_counter %d filter_event %d \n",__func__, (kad_first_one_finger_done>0), kad_finger_counter, filter_event);
+			if (type == EV_ABS) {
+				pr_info("%s filter branch _____ ts_input log_abs %d %d %d\n",__func__,type,code,value);
+			}
+			if (type == EV_SYN) {
+				pr_info("%s filter branch _____ ts_input log_syn %d %d %d\n",__func__,type,code,value);
+			}
+			if (kad_finger_counter == 0) { //
+				if ((code==47) || (code==57 && value == -1) || (type==0 && code==0)) {
+					// if no touch on screen yet, but events coming related to fingers leaving, then that must be remnants of a previous screen on state with fingers on screen while it turned off...
+					// let thos events unfiltered and unchecked...
+					filter_event = false;
+					pr_info("%s filter branch _____ remnant event detected... do NOT filter EVENT: %d %d %d\n",__func__,type,code,value);
+					/* Example...untouching fingers upon screen on...remnant events:
+					[  440.638015] ts_input_filter filter branch _____ ts_input log_abs 3 47 0
+					...
+					[  440.638099] ts_input_filter filter branch _____ ts_input log_abs 3 57 -1
+					[  440.638136] ts_input_filter filter branch _____ ts_input log_syn 0 0 0
+					*/
+				}
+			}
 
+		    if (filter_event) {
+		    // if not the remnant events (filter_event==true) of a previous touches
+		    // interrupted with screen off then we can continue to check what type of events are these...
+		    // otherwise we shouldn't look for interrupting KAD filtering...
 			if (code == 57 && value>0) {
 				unsigned int time_diff = jiffies - kad_first_one_finger_touch_time;
 				if (time_diff > 50*JIFFY_MUL) kad_first_one_finger_done = 0; // reset here if other touches already happened, 
@@ -2810,6 +2834,7 @@ skip_ts:
 					kad_first_one_finger_done = 0;
 				}
 				kad_finger_counter--;
+				if (kad_finger_counter<0) kad_finger_counter = 0;
 			}
 
 			if (get_kad_two_finger_gesture() && kad_finger_counter==2) {
@@ -2826,6 +2851,7 @@ skip_ts:
 					stop_kad_running(true,__func__);
 				}
 			}
+		    }
 
 		}
 	}
@@ -2836,6 +2862,7 @@ skip_ts:
 		}
 		if (code == 57 && value<0) { // detouch
 			kad_finger_counter--;
+			if (kad_finger_counter<0) kad_finger_counter = 0;
 		}
 		if (kad_finger_counter>0) filter_event = true;
 		if (kad_finger_counter==0) {
@@ -3002,6 +3029,7 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 	if (!strcmp(event,NTF_EVENT_SLEEP)) {
 		screen_on = 0;
 		screen_on_full = 0;
+		kad_finger_counter = 0;
 		last_kad_screen_off_time = jiffies;
 		last_screen_event_timestamp = jiffies;
 		last_screen_off_seconds = get_global_seconds();
