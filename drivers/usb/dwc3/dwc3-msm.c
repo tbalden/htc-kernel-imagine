@@ -3787,19 +3787,23 @@ static int dwc3_msm_host_notifier(struct notifier_block *nb,
 		}
 
 		if (audioInterface) {
-			power_supply_get_property(mdwc->usb_psy, POWER_SUPPLY_PROP_EXT_OTG_CONTROL, &pval);
-			if (!pval.intval) {
-				/* enable external OTG source, 1:enable, 0:disable*/
-				pval.intval = 1;
-				power_supply_set_property(mdwc->usb_psy, POWER_SUPPLY_PROP_EXT_OTG_CONTROL, &pval);
+			if (udev->descriptor.idVendor == 0x040d && udev->descriptor.idProduct == 0x340b) {
+				pr_info("It's VIA dongle!! Do not switch OTG power\n");
+			} else {
+				power_supply_get_property(mdwc->usb_psy, POWER_SUPPLY_PROP_EXT_OTG_CONTROL, &pval);
+				if (!pval.intval) {
+					/* enable external OTG source, 1:enable, 0:disable*/
+					pval.intval = 1;
+					power_supply_set_property(mdwc->usb_psy, POWER_SUPPLY_PROP_EXT_OTG_CONTROL, &pval);
 
-				/* delay 100ms to ensure the external OTG source reaches 5V */
-				mdelay(100);
+					/* delay 100ms to ensure the external OTG source reaches 5V */
+					mdelay(100);
 
-				/* disable internal OTG source, 0:disable */
-				pval.intval = 0;
-				power_supply_set_property(mdwc->usb_psy, POWER_SUPPLY_PROP_INT_OTG_CONTROL, &pval);
-				pr_info("switch OTG power to external\n");
+					/* disable internal OTG source, 0:disable */
+					pval.intval = 0;
+					power_supply_set_property(mdwc->usb_psy, POWER_SUPPLY_PROP_INT_OTG_CONTROL, &pval);
+					pr_info("switch OTG power to external\n");
+				}
 			}
 		}
 	}

@@ -2034,6 +2034,18 @@ void htc_print_pon_boot_reason(void)
 	printk(KERN_INFO "PON_POFF register dump: %s\n", reg_dump_str);
 }
 EXPORT_SYMBOL_GPL(htc_print_pon_boot_reason);
+
+int htc_get_pon_reason(void)
+{
+    return htc_pon_trigger_reason;
+}
+EXPORT_SYMBOL_GPL(htc_get_pon_reason);
+
+int htc_get_poff_reason(void)
+{
+    return htc_pon_power_off_reason;
+}
+EXPORT_SYMBOL_GPL(htc_get_poff_reason);
 #endif
 
 static int qpnp_pon_probe(struct platform_device *pdev)

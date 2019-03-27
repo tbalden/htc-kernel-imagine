@@ -165,6 +165,9 @@ static bool g_screen_limit = true;
 /* Thermal ibat limit */
 static int g_thermal_limit_ma = 0;
 
+static int g_cc_uAh_now = 0;
+static int g_learned_FCC = 0;
+
 /* reference from power_supply.h power_supply_type */
 const char *cg_chr_src[] = { "NONE", "Battery", "UPS", "Mains", "USB", "AC(USB_DCP)",
 			     "USB_CDP", "USB_ACA", "USB_HVDCP", "USB_HVDCP_3", "USB_PD",
@@ -1147,26 +1150,35 @@ static void batt_check_overload(unsigned long time_since_last_update_ms)
 	s_prev_level_raw = htc_batt_info.rep.level_raw;
 }
 
+extern int htc_get_pon_reason(void);
+extern int htc_get_poff_reason(void);
 int batt_check_consistent(void)
 {
 	struct timespec xtime = CURRENT_TIME;
 	unsigned long currtime_s = (xtime.tv_sec * MSEC_PER_SEC + xtime.tv_nsec / NSEC_PER_MSEC)/MSEC_PER_SEC;
+	int consistent_soc_gap = 10;
+
+	/* The voltage not stable when keeping reboot,
+	   adjust consistent condition for reboot case. */
+	if ((htc_get_pon_reason() == 0) && (htc_get_poff_reason() == 1))
+		consistent_soc_gap = 100;
 
 	/* Restore battery data for keeping soc stable */
 	if (htc_batt_info.store.batt_stored_magic_num == STORE_MAGIC_NUM
 		&& htc_batt_info.rep.batt_temp > 20
 		&& htc_batt_info.store.batt_stored_temperature > 20
-		&& (abs(htc_batt_info.rep.level_raw - htc_batt_info.store.batt_stored_soc) < 10)
+		&& (abs(htc_batt_info.rep.level_raw - htc_batt_info.store.batt_stored_soc) < consistent_soc_gap)
 		&& (htc_batt_info.rep.level_raw > 5 )) {
 		htc_batt_info.store.consistent_flag = true;
 	}
 
 	BATT_EMBEDDED("%s: magic_num=0x%X, level_raw=%d, store_soc=%d, current_time:%lu, store_time=%lu,"
-				" batt_temp=%d, store_temp=%d, consistent_flag=%d", __func__,
+				" batt_temp=%d, store_temp=%d, consistent_soc_gap=%d, consistent_flag=%d", __func__,
 				htc_batt_info.store.batt_stored_magic_num, htc_batt_info.rep.level_raw,
 				htc_batt_info.store.batt_stored_soc,currtime_s,
 				htc_batt_info.store.batt_stored_update_time,htc_batt_info.rep.batt_temp,
 				htc_batt_info.store.batt_stored_temperature,
+				consistent_soc_gap,
 				htc_batt_info.store.consistent_flag);
 
 	return htc_batt_info.store.consistent_flag;
@@ -1223,12 +1235,15 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 	static int s_store_level = 0;
 	static int s_pre_five_digit = 0;
 	static int s_five_digit = 0;
+	static int s_cc_uAh_pre = 0;
 	static bool s_stored_level_flag = false;
 	static bool s_allow_drop_one_percent_flag = false;
 	int dec_level = 0;
 	int dropping_level;
 	int drop_raw_level;
 	int allow_suspend_drop_level = 0;
+	int suspend_dropping_cc = 0;
+	int one_percent_cc = g_learned_FCC/100;
 	static unsigned long time_accumulated_level_change = 0;
 
 	if (s_first) {
@@ -1242,6 +1257,7 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 		htc_batt_info.prev.level_raw= htc_batt_info.rep.level_raw;
 		s_pre_five_digit = htc_batt_info.rep.level / 10;
 		htc_batt_info.prev.charging_source = htc_batt_info.rep.charging_source;
+		s_cc_uAh_pre = g_cc_uAh_now;
 		BATT_LOG("pre_level=%d,pre_raw_level=%d,pre_five_digit=%d,pre_chg_src=%d\n",
 			htc_batt_info.prev.level,htc_batt_info.prev.level_raw,s_pre_five_digit,
 			htc_batt_info.prev.charging_source);
@@ -1382,8 +1398,19 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 					} else if (SIXTY_MINUTES_MS < time_since_last_update_ms) {
 						allow_suspend_drop_level = 8;
 					}
+
+					BATT_LOG("%s: remap: s_cc_uAh_pre:%d, g_cc_uAh_now:%d, g_learned_FCC:%d",
+							__func__, s_cc_uAh_pre, g_cc_uAh_now, g_learned_FCC);
+
+					suspend_dropping_cc = abs(s_cc_uAh_pre - g_cc_uAh_now);
+					if (suspend_dropping_cc < (one_percent_cc/2))
+						allow_suspend_drop_level = 0;
+					else if (allow_suspend_drop_level > (suspend_dropping_cc/one_percent_cc))
+						allow_suspend_drop_level = (suspend_dropping_cc/one_percent_cc) + 1;
+
 					/* allow_suspend_drop_level (4/6/8) is temporary setting, original is (1/2/3) */
 					if (allow_suspend_drop_level != 0) {
+						s_cc_uAh_pre = g_cc_uAh_now;
 						if (allow_suspend_drop_level <= drop_raw_level) {
 							adjust_store_level(&s_store_level, drop_raw_level, allow_suspend_drop_level, htc_batt_info.prev.level);
 						} else {
@@ -1593,6 +1620,7 @@ static void batt_level_adjust(unsigned long time_since_last_update_ms)
 	g_is_consistent_level_ready = true;
 
 	if (htc_batt_info.rep.level != htc_batt_info.prev.level){
+		s_cc_uAh_pre = g_cc_uAh_now;
 		time_accumulated_level_change = 0;
 		gs_update_PSY = true;
 	}
@@ -2826,6 +2854,8 @@ static void batt_worker(struct work_struct *work)
 	calculate_batt_cycle_info(time_since_last_update_ms);
 
 	/* STEP 6: battery level smoothen adjustment */
+	g_cc_uAh_now = get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_COUNTER);
+	g_learned_FCC = get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_FULL);
 	batt_level_adjust(time_since_last_update_ms);
 	g_is_rep_level_ready = true;
 
@@ -3146,9 +3176,9 @@ static void batt_worker(struct work_struct *work)
 		htc_batt_info.htc_extension,
 		htcchg_on? 1 : 0,
 		g_total_level_raw,
-		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_COUNTER),
+		g_cc_uAh_now,
 		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CC_SOC),
-		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_FULL),
+		g_learned_FCC,
 		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_RESISTANCE),
 		g_usb_conn_temp,
 		g_usb_overheat? 1 : 0,

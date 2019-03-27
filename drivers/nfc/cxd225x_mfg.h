@@ -54,11 +54,13 @@ static control_msg_pack nfc_version_script[] = {
 		.exp_resp_content = { 1, 0x00 },
 		.exp_ntf = { 0 },
 	},
+#if 0 // for cxd2252
 	{	/* PATCH_VERSION_CMD */
 		.cmd = { 3, 0x2F, 0x1B, 0x00 },
 		.exp_resp_content = { 1, 0x00 },
 		.exp_ntf = { 0 },
 	},
+#endif
 };
 
 static control_msg_pack nfc_version_script_test[] = {

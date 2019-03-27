@@ -3597,17 +3597,8 @@ irqreturn_t smblib_handle_debug(int irq, void *data)
 {
 	struct smb_irq_data *irq_data = data;
 	struct smb_charger *chg = irq_data->parent_data;
-#ifdef CONFIG_HTC_BATT
-	bool is_log_print = true;
-
-	if (strcmp(irq_data->name, "input-current-limiting") == 0)
-		is_log_print = false;
-
-	if (!is_log_print)
-		smblib_dbg(chg, PR_REGISTER, "IRQ: %s\n", irq_data->name);
-	else
-#endif //CONFIG_HTC_BATT
-	smblib_dbg(chg, PR_INTERRUPT, "IRQ: %s\n", irq_data->name);
+	if (printk_ratelimit())
+		smblib_dbg(chg, PR_INTERRUPT, "IRQ: %s\n", irq_data->name);
 	return IRQ_HANDLED;
 }
 

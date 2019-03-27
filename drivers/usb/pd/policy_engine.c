@@ -1690,6 +1690,7 @@ int htc_pd_get_usb_state(void)
 EXPORT_SYMBOL(htc_pd_get_usb_state);
 
 #ifdef CONFIG_INPUT_DW7912_VOLTAGE_SWITCH_WA
+bool is_voltage_changed = false;
 extern void haptics_voltage_switch(bool enabled);
 #endif
 static void handle_vdm_rx(struct usbpd *pd, struct rx_msg *rx_msg)
@@ -1735,6 +1736,7 @@ static void handle_vdm_rx(struct usbpd *pd, struct rx_msg *rx_msg)
 		/* Tell vibrator */
 		usbpd_err(&pd->dev, "notify vibrator that we enter DP mode\n");
 		haptics_voltage_switch(true);
+		is_voltage_changed = true;
 #endif
 		tusb544_update_state(CC_STATE_DP, usbpd_get_plug_orientation(pd));
 	}
@@ -2147,7 +2149,10 @@ static void usbpd_sm(struct work_struct *w)
 #ifdef CONFIG_INPUT_DW7912_VOLTAGE_SWITCH_WA
 		/* Tell vibrator */
 		usbpd_err(&pd->dev, "notify vibrator that Type-C disconnect\n");
-		haptics_voltage_switch(false);
+		if (is_voltage_changed) {
+			haptics_voltage_switch(false);
+			is_voltage_changed = false;
+		}
 #endif
 
 		if (pd->pd_phy_opened) {

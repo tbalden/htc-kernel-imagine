@@ -748,7 +748,32 @@ int nci_Reader(control_msg_pack *script, unsigned int scriptSize) {
 			break;
 		case 0x0F20: /* Case SONY  */
 			I("SONY specific packert.\n");
-			res_achieved = 1;
+			I("### Response FW_VERSION_CMD received.\n");
+                        if(*(script->exp_resp_content)) {
+				if (memcmp(nci_rx_header, expect_resp_header, 2) == 0) {
+					I("Response type matched with command.\n");
+					if (memcmp(&script->exp_resp_content[1], receiverBuffer, script->exp_resp_content[0]) == 0) {
+						I("Response matched with expected response, res_achieved set.\n");
+						I("### FW_VERSION_CMD, res_achieved = 1\n");
+						res_achieved = 1;
+					} else {
+						I("Not expected response! Quit now.\n");
+						return -255;
+					}
+				} else {
+					I("Command-Response type not matched, ignore.\n");
+					return -255;
+				}
+			}
+
+			gDevice_info.fwVersion = ((unsigned int)receiverBuffer[3]) << 16 | \
+						 ((unsigned int)receiverBuffer[2]) << 8 | \
+						 (unsigned int)receiverBuffer[1];
+			I("FW Version 0x%06lX\n", gDevice_info.fwVersion);
+			gDevice_info.FW_Minor = gDevice_info.fwVersion & 0xFFFF;
+			gDevice_info.FW_Major = (gDevice_info.fwVersion >> 16) & 0xFFFF;
+			mfc_nfc_cmd_result = 1; //(int)gDevice_info.fwVersion;
+
 			break;
 		case 0x0F1B: /* Case SONY  */
 			I("SONY specific packert.\n");
@@ -1616,7 +1641,7 @@ static ssize_t mfg_nfcversion(struct device *dev,
 
 	if (mfc_nfc_cmd_result > 0) {
 		return scnprintf(buf, PAGE_SIZE,
-			"NFC firmware version: 0x%07x\n", (int)gDevice_info.fwVersion);
+			"NFC firmware version: %x.%04x\n", (int)gDevice_info.FW_Major, (int)gDevice_info.FW_Minor);
 	}
 	else if (mfc_nfc_cmd_result == 0) {
 		return scnprintf(buf, PAGE_SIZE,

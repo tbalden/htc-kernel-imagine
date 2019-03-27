@@ -548,10 +548,7 @@ static inline void ufshcd_enable_irq(struct ufs_hba *hba)
 static inline void ufshcd_disable_irq(struct ufs_hba *hba)
 {
 	if (hba->is_irq_enabled) {
-		if (hba->flag_noc_err)
-			disable_irq_nosync(hba->irq);
-		else
-			disable_irq(hba->irq);
+		disable_irq(hba->irq);
 		hba->is_irq_enabled = false;
 	}
 }
@@ -1557,14 +1554,6 @@ static void ufshcd_ungate_work(struct work_struct *work)
 	spin_unlock_irqrestore(hba->host->host_lock, flags);
 	ufshcd_hba_vreg_set_hpm(hba);
 	ufshcd_enable_clocks(hba);
-	if (hba->flag_noc_err) {
-		dev_err(hba->dev, "%s: flag_noc_err set, dump UFS reg\n", __func__);
-		ufshcd_print_host_regs(hba);
-		ufshcd_print_host_state(hba);
-		ufshcd_print_pwr_info(hba);
-		ufshcd_print_cmd_log(hba);
-		BUG();
-	}
 	/* enable interrupts after clocks are enabled. Incase there was
 	an error interrupt during clock gating, the irq will be handled
 	*/
@@ -6902,18 +6891,6 @@ static irqreturn_t ufshcd_intr(int irq, void *__hba)
 	int retries = hba->nutrs;
 
 	spin_lock(hba->host->host_lock);
-	if (hba->clk_gating.state != CLKS_ON) {
-		dev_err(hba->dev, "%s: Clock gating state %d\n",
-			__func__, hba->clk_gating.state);
-		hba->flag_noc_err = true;
-		__ufshcd_scsi_block_requests(hba);
-		ufshcd_disable_irq(hba);
-		hba->clk_gating.state = REQ_CLKS_ON;
-		queue_work(hba->clk_gating.clk_gating_workq,
-				&hba->clk_gating.ungate_work);
-		spin_unlock(hba->host->host_lock);
-		return retval;
-	}
 	intr_status = ufshcd_readl(hba, REG_INTERRUPT_STATUS);
 	hba->ufs_stats.last_intr_status = intr_status;
 	hba->ufs_stats.last_intr_ts = ktime_get();

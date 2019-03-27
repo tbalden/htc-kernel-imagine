@@ -62,6 +62,15 @@
 #endif
 #endif
 
+#define CONFIG_SECURE_TOUCH
+
+#if defined(CONFIG_SECURE_TOUCH)
+#include <linux/completion.h>
+#include <linux/atomic.h>
+#include <linux/clk.h>
+#endif
+
+
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 38))
 #define KERNEL_ABOVE_2_6_38
 #endif
@@ -583,6 +592,15 @@ struct synaptics_rmi4_data {
 			bool enable);
 	void (*report_touch)(struct synaptics_rmi4_data *rmi4_data,
 			struct synaptics_rmi4_fn *fhandler);
+#if defined(CONFIG_SECURE_TOUCH)
+        atomic_t st_enabled;
+        atomic_t st_pending_irqs;
+        bool st_initialized;
+        struct completion st_powerdown;
+        struct completion st_irq_processed;
+        struct clk *core_clk;
+        struct clk *iface_clk;
+#endif
 };
 
 struct synaptics_dsx_bus_access {
@@ -591,6 +609,10 @@ struct synaptics_dsx_bus_access {
 		unsigned char *data, unsigned int length);
 	int (*write)(struct synaptics_rmi4_data *rmi4_data, unsigned short addr,
 		unsigned char *data, unsigned int length);
+#if defined(CONFIG_SECURE_TOUCH)
+        int (*get)(struct synaptics_rmi4_data *rmi4_data);
+        void (*put)(struct synaptics_rmi4_data *rmi4_data);
+#endif
 };
 
 struct synaptics_dsx_hw_interface {
@@ -641,6 +663,17 @@ static inline int synaptics_rmi4_reg_write(
 	return rmi4_data->hw_if->bus_access->write(rmi4_data, addr, data, len);
 }
 
+#if defined(CONFIG_SECURE_TOUCH)
+static inline int synaptics_rmi4_bus_get(struct synaptics_rmi4_data *rmi4_data)
+{
+        return rmi4_data->hw_if->bus_access->get(rmi4_data);
+}
+static inline void synaptics_rmi4_bus_put(struct synaptics_rmi4_data *rmi4_data)
+{
+	rmi4_data->hw_if->bus_access->put(rmi4_data);
+}
+#endif
+
 static inline ssize_t synaptics_rmi4_show_error(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -658,18 +691,18 @@ static inline ssize_t synaptics_rmi4_store_error(struct device *dev,
 }
 
 static inline int secure_memcpy(unsigned char *dest, unsigned int dest_size,
-		const unsigned char *src, unsigned int src_size,
-		unsigned int count)
+                const unsigned char *src, unsigned int src_size,
+                unsigned int count)
 {
-	if (dest == NULL || src == NULL)
-		return -EINVAL;
+        if (dest == NULL || src == NULL)
+                return -EINVAL;
 
-	if (count > dest_size || count > src_size)
-		return -EINVAL;
+        if (count > dest_size || count > src_size)
+                return -EINVAL;
 
-	memcpy((void *)dest, (const void *)src, count);
+        memcpy((void *)dest, (const void *)src, count);
 
-	return 0;
+        return 0;
 }
 
 static inline void batohs(unsigned short *dest, unsigned char *src)

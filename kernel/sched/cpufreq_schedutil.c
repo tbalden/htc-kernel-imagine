@@ -19,6 +19,8 @@
 #include "sched.h"
 #include "tune.h"
 
+#define PNP_TUNABLE
+
 #ifdef CONFIG_SCHED_WALT
 unsigned long boosted_cpu_util(int cpu);
 #endif
@@ -30,6 +32,13 @@ struct sugov_tunables {
 	unsigned int rate_limit_us;
 	unsigned int hispeed_load;
 	unsigned int hispeed_freq;
+#ifdef PNP_TUNABLE
+	unsigned int rs;
+	unsigned int target_load;
+	unsigned int nl_ratio;
+	unsigned int slow_up_freq;
+	bool slow_up;
+#endif
 	bool pl;
 };
 
@@ -132,7 +141,12 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
 	}
 }
 
+#ifdef PNP_TUNABLE
+#define DEFAULT_TARGET_LOAD 80
+#define TARGET_LOAD (sg_policy->tunables->target_load)
+#else
 #define TARGET_LOAD 80
+#endif
 /**
  * get_next_freq - Compute a new frequency for a given cpufreq policy.
  * @sg_policy: schedutil policy object to compute the new frequency for.
@@ -162,7 +176,16 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 	unsigned int freq = arch_scale_freq_invariant() ?
 				policy->cpuinfo.max_freq : policy->cur;
 
+#ifdef PNP_TUNABLE
+	freq = (freq + (freq >> sg_policy->tunables->rs)) * util / max;
+	/* Slow up the frequency for power tuning. */
+	if (sg_policy->tunables->slow_up && sg_policy->tunables->slow_up_freq) {
+		if (freq > sg_policy->tunables->slow_up_freq)
+			freq = (freq + sg_policy->tunables->slow_up_freq) >> 1;
+	}
+#else
 	freq = (freq + (freq >> 2)) * util / max;
+#endif
 	trace_sugov_next_freq(policy->cpu, util, max, freq);
 
 	if (freq == sg_policy->cached_raw_freq && sg_policy->next_freq != UINT_MAX)
@@ -270,7 +293,12 @@ static void sugov_calc_avg_cap(struct sugov_policy *sg_policy, u64 curr_ws,
 	sg_policy->last_ws = curr_ws;
 }
 
+#ifdef PNP_TUNABLE
+#define DEFAULT_NL_RATIO 75
+#define NL_RATIO (sg_policy->tunables->nl_ratio)
+#else
 #define NL_RATIO 75
+#endif
 #define DEFAULT_HISPEED_LOAD 90
 static void sugov_walt_adjust(struct sugov_cpu *sg_cpu, unsigned long *util,
 			      unsigned long *max)
@@ -576,6 +604,12 @@ static ssize_t hispeed_freq_store(struct gov_attr_set *attr_set,
 	if (kstrtouint(buf, 10, &val))
 		return -EINVAL;
 
+#ifdef PNP_TUNABLE
+	/* Need to meet the threshold. */
+	if (tunables->slow_up_freq > 0 && tunables->slow_up_freq < val)
+		return -EINVAL;
+#endif
+
 	tunables->hispeed_freq = val;
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
 		raw_spin_lock_irqsave(&sg_policy->update_lock, flags);
@@ -607,6 +641,117 @@ static ssize_t pl_store(struct gov_attr_set *attr_set, const char *buf,
 	return count;
 }
 
+#ifdef PNP_TUNABLE
+static ssize_t rs_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", tunables->rs);
+}
+
+static ssize_t rs_store(struct gov_attr_set *attr_set,
+					const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	if (kstrtouint(buf, 10, &tunables->rs))
+		return -EINVAL;
+
+	tunables->rs = min(30U, tunables->rs);
+
+	return count;
+}
+
+static ssize_t target_load_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", tunables->target_load);
+}
+
+static ssize_t target_load_store(struct gov_attr_set *attr_set,
+					const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	if (kstrtouint(buf, 10, &tunables->target_load))
+		return -EINVAL;
+
+	tunables->nl_ratio = min(100U, tunables->target_load);
+
+	return count;
+}
+
+static ssize_t nl_ratio_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", tunables->nl_ratio);
+}
+
+static ssize_t nl_ratio_store(struct gov_attr_set *attr_set,
+					const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	if (kstrtouint(buf, 10, &tunables->nl_ratio))
+		return -EINVAL;
+
+	tunables->nl_ratio = min(100U, tunables->nl_ratio);
+
+	return count;
+}
+
+static ssize_t slow_up_freq_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", tunables->slow_up_freq);
+}
+
+static ssize_t slow_up_freq_store(struct gov_attr_set *attr_set,
+					const char *buf, size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+	unsigned int val;
+
+	if (kstrtouint(buf, 10, &val))
+		return -EINVAL;
+
+	/* Need to meet the threshold. */
+	if (val >= tunables->hispeed_freq)
+		tunables->slow_up_freq = val;
+	else
+		tunables->slow_up_freq = 0;
+
+	return count;
+}
+
+static ssize_t slow_up_show(struct gov_attr_set *attr_set, char *buf)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", tunables->slow_up);
+}
+
+static ssize_t slow_up_store(struct gov_attr_set *attr_set, const char *buf,
+				   size_t count)
+{
+	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+
+	if (kstrtobool(buf, &tunables->slow_up))
+		return -EINVAL;
+
+	return count;
+}
+
+static struct governor_attr rs = __ATTR_RW(rs);
+static struct governor_attr target_load = __ATTR_RW(target_load);
+static struct governor_attr nl_ratio = __ATTR_RW(nl_ratio);
+static struct governor_attr slow_up_freq = __ATTR_RW(slow_up_freq);
+static struct governor_attr slow_up = __ATTR_RW(slow_up);
+#endif
+
 static struct governor_attr rate_limit_us = __ATTR_RW(rate_limit_us);
 static struct governor_attr hispeed_load = __ATTR_RW(hispeed_load);
 static struct governor_attr hispeed_freq = __ATTR_RW(hispeed_freq);
@@ -616,6 +761,13 @@ static struct attribute *sugov_attributes[] = {
 	&rate_limit_us.attr,
 	&hispeed_load.attr,
 	&hispeed_freq.attr,
+#ifdef PNP_TUNABLE
+	&rs.attr,
+	&target_load.attr,
+	&nl_ratio.attr,
+	&slow_up_freq.attr,
+	&slow_up.attr,
+#endif
 	&pl.attr,
 	NULL
 };
@@ -728,6 +880,13 @@ static void sugov_tunables_save(struct cpufreq_policy *policy,
 			per_cpu(cached_tunables, cpu) = cached;
 	}
 
+#ifdef PNP_TUNABLE
+	cached->rs = tunables->rs;
+	cached->target_load = tunables->target_load;
+	cached->nl_ratio = tunables->nl_ratio;
+	cached->slow_up_freq = tunables->slow_up_freq;
+	cached->slow_up = tunables->slow_up;
+#endif
 	cached->pl = tunables->pl;
 	cached->hispeed_load = tunables->hispeed_load;
 	cached->hispeed_freq = tunables->hispeed_freq;
@@ -751,6 +910,13 @@ static void sugov_tunables_restore(struct cpufreq_policy *policy)
 	if (!cached)
 		return;
 
+#ifdef PNP_TUNABLE
+	tunables->rs = cached->rs;
+	tunables->target_load = cached->target_load;
+	tunables->nl_ratio = cached->nl_ratio;
+	tunables->slow_up_freq = cached->slow_up_freq;
+	tunables->slow_up = cached->slow_up;
+#endif
 	tunables->pl = cached->pl;
 	tunables->hispeed_load = cached->hispeed_load;
 	tunables->hispeed_freq = cached->hispeed_freq;
@@ -802,6 +968,13 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
+#ifdef PNP_TUNABLE
+	tunables->rs = 2;
+	tunables->target_load = DEFAULT_TARGET_LOAD;
+	tunables->nl_ratio = DEFAULT_NL_RATIO;
+	tunables->slow_up_freq = 0;
+	tunables->slow_up = 0;
+#endif
 	tunables->rate_limit_us = LATENCY_MULTIPLIER;
 	tunables->hispeed_load = DEFAULT_HISPEED_LOAD;
 	tunables->hispeed_freq = 0;

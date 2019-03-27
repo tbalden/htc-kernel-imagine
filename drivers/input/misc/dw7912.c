@@ -49,10 +49,12 @@ struct dw7912_priv {
 	struct vib_trigger_enabler      enabler;
 #endif
 	atomic_t                        state;
+	atomic_t                        realstate;
 	u8 waveNum;
 	u32 defaultFreq;
 	u32 calFreq;
 	u32 vibTime;
+	u32 bc_status;
 	int en;
 	int waveSize1;
 	int waveSize2;
@@ -285,6 +287,10 @@ static int smart_get_boost_on(void) {
 
 #endif
 
+bool is_bc_running(void) {
+	struct dw7912_priv *pDW = Gdw7912;
+	return (pDW->bc_status);
+}
 
 int memory_mode_play_set(struct dw7912_priv *p, int mode)
 {
@@ -467,10 +473,17 @@ static void dw7912_haptics_work(struct work_struct *work)
 
 	mutex_lock(&pDW->play_lock);
 
+	if(is_bc_running()) {
+		gprintk("BC status is running! Skip vibrator access!");
+		mutex_unlock(&pDW->play_lock);
+		return ;
+	}
+
 	enable = atomic_read(&pDW->state);
 	pr_info("%s [VIB] atomic read %d...\n",__func__, enable);
 
 	if (enable) {
+		atomic_set(&pDW->realstate, 1);
 		if (pDW->vibTime == 100000) {
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x09, 0x00);
 			i2c_smbus_write_byte_data(pDW->dwclient, 0x03, 0x01);
@@ -555,6 +568,7 @@ static void dw7912_haptics_work(struct work_struct *work)
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x15, 0x0);
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x16, 0x0);
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x17, 0x0);
+		atomic_set(&pDW->realstate, 0);
 	}
 	mutex_unlock(&pDW->play_lock);
 }
@@ -675,6 +689,11 @@ static ssize_t dw_haptics_show_waveform(struct device *dev, struct device_attrib
 static ssize_t dw_haptics_store_enable(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct dw7912_priv *pDW = Gdw7912;
+	if(is_bc_running()) {
+		gprintk("BC status is running! Skip vibrator access!");
+		return 0;
+	}
+
 	if (buf[0] == '1') {
 /*		i2c_smbus_write_byte_data(pDW->dwclient, 0x03, 0x00); // play type set 1: memory, 0:RTP
 		i2c_smbus_write_byte_data(pDW->dwclient, 0x08, 0x96); //step3 : vd-calmp set 6v
@@ -762,7 +781,12 @@ static ssize_t dw_haptics_show_enable(struct device *dev, struct device_attribut
 static ssize_t dw_haptics_show_state(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	/* For now nothing to show */
-	return snprintf(buf, PAGE_SIZE, "%d\n", 0);
+	struct dw7912_priv *pDW = Gdw7912;
+	bool enable;
+
+	enable = atomic_read(&pDW->realstate);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", enable ? 1 : 0);
 }
 
 static ssize_t dw_haptics_store_state(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
@@ -828,6 +852,11 @@ static ssize_t dw_haptics_store_activate(struct device *dev, struct device_attri
 
 	int ret = 0;
 	u32 val;
+
+	if(is_bc_running()) {
+		gprintk("BC status is running! Skip vibrator access!");
+		return 0;
+	}
 
 	ret = kstrtouint(buf, 0, &val);
 	if (ret < 0) {
@@ -1148,6 +1177,37 @@ file_op_fail:
 	return count;
 }
 
+static ssize_t dw_haptics_show_bc_status(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dw7912_priv *pDW = Gdw7912;
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", pDW->bc_status);
+}
+
+static ssize_t dw_haptics_store_bc_status(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct dw7912_priv *pDW = Gdw7912;
+	int ret;
+	u32 value;
+	ret = kstrtouint(buf, 0, &value);
+	if(ret < 0)
+		return ret;
+
+	mutex_lock(&pDW->play_lock);
+	if(value) {
+		hrtimer_cancel(&pDW->stop_timer);
+		cancel_work_sync(&pDW->haptics_work);
+		pDW->bc_status = 1;
+	} else {
+		pDW->bc_status = 0;
+	}
+
+	mutex_unlock(&pDW->play_lock);
+	gprintk("Set bc_stattus to %d\n", pDW->bc_status);
+
+	return count;
+}
+
 static struct device_attribute dw_haptics_attrs[] = {
 	__ATTR(state, 0664, dw_haptics_show_state, dw_haptics_store_state),
 	__ATTR(duration, 0664, dw_haptics_show_duration, dw_haptics_store_duration),
@@ -1159,6 +1219,7 @@ static struct device_attribute dw_haptics_attrs[] = {
 	__ATTR(calibration, 0664, dw_haptics_show_calibration, dw_haptics_store_calibration),
 	__ATTR(applyK, 0664, dw_haptics_show_applyCalibration, dw_haptics_store_applyCalibration),
 	__ATTR(DIYwf, 0664, dw_haptics_show_dynamicLoadingWF, dw_haptics_store_dynamicLoadingWF),
+	__ATTR(BC_status,0664, dw_haptics_show_bc_status, dw_haptics_store_bc_status),
 };
 
 /* Dummy functions for brightness */
@@ -1296,6 +1357,11 @@ int real_time_playback(struct dw7912_priv *p, u8 *data, u32 size)
 void haptics_voltage_switch(bool enabled) {
 	struct dw7912_priv *pDW = Gdw7912;
 	u8 *cpy_header = NULL;
+
+	if(is_bc_running()) {
+		gprintk("BC status is running! Skip vibrator access!");
+		return ;
+	}
 
 	if (enabled == false) {
 #ifdef CONFIG_UCI_NOTIFICATIONS
@@ -1720,6 +1786,9 @@ static int dw7912_i2c_probe(struct i2c_client *client,
 
 	i2c_smbus_write_byte_data(dw7912->dwclient, 0x23, 0x06); //boost offset set
 	gprintk("Set 0x23(boost_option) to 0x06\n");
+
+	dw7912->bc_status = 0;
+	gprintk("Set bc_stattus to %d\n", dw7912->bc_status);
 
 	Gdw7912 = dw7912;
 	async_schedule(dw7912_waveform_async, NULL);

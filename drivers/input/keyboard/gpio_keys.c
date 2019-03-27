@@ -521,6 +521,7 @@ static void debug_combine_key(unsigned int code, int value)
                show_state_filter(TASK_UNINTERRUPTIBLE);
 }
 
+extern bool is_bc_running(void);
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata, bool debug)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -532,6 +533,13 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata, bool deb
 	if (state < 0) {
 		dev_err(input->dev.parent,
 			"failed to get gpio state: %d\n", state);
+		return;
+	}
+
+	// Block power key to avoid display off by manually
+	if (button->code == KEY_POWER && is_bc_running()) {
+		KEY_LOGI("%s: key %x-%x, (%d) is blocked by secure ui\n",
+				__func__, type, button->code, button->gpio);
 		return;
 	}
 
