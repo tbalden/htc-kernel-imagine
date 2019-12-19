@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,12 +19,16 @@
 #include <linux/types.h>
 #include <linux/kthread.h>
 #include <linux/hdcp_qseecom.h>
+#include <linux/msm_hdcp.h>
 #include <drm/drm_dp_helper.h>
 
 #include "sde_hdcp.h"
 
 #define DP_INTR_STATUS2				(0x00000024)
 #define DP_INTR_STATUS3				(0x00000028)
+
+#define DP_DPCD_CP_IRQ                          (0x201)
+
 #define dp_read(offset) readl_relaxed((offset))
 #define dp_write(offset, data) writel_relaxed((data), (offset))
 #define DP_HDCP_RXCAPS_LENGTH 3
@@ -320,35 +324,16 @@ static void dp_hdcp2p2_min_level_change(void *client_ctx,
 	struct dp_hdcp2p2_ctrl *ctrl = (struct dp_hdcp2p2_ctrl *)client_ctx;
 	struct hdcp_lib_wakeup_data cdata = {
 		HDCP_LIB_WKUP_CMD_QUERY_STREAM_TYPE};
-	bool enc_notify = true;
-	int enc_lvl;
 
 	if (!ctrl) {
 		pr_err("invalid input\n");
 		return;
 	}
 
-	switch (min_enc_level) {
-	case 0:
-		enc_lvl = HDCP_STATE_AUTH_ENC_NONE;
-		break;
-	case 1:
-		enc_lvl = HDCP_STATE_AUTH_ENC_1X;
-		break;
-	case 2:
-		enc_lvl = HDCP_STATE_AUTH_ENC_2P2;
-		break;
-	default:
-		enc_notify = false;
-	}
-
 	pr_debug("enc level changed %d\n", min_enc_level);
 
 	cdata.context = ctrl->lib_ctx;
 	dp_hdcp2p2_wakeup_lib(ctrl, &cdata);
-
-	if (enc_notify && ctrl->init_data.notify_status)
-		ctrl->init_data.notify_status(ctrl->init_data.cb_data, enc_lvl);
 }
 
 static void dp_hdcp2p2_auth_failed(struct dp_hdcp2p2_ctrl *ctrl)
@@ -411,6 +396,7 @@ static int dp_hdcp2p2_aux_write_message(struct dp_hdcp2p2_ctrl *ctrl,
 		if (bytes_written != write_size) {
 			pr_err("fail: offset(0x%x), size(0x%x), rc(0x%x)\n",
 					offset, write_size, bytes_written);
+			rc = bytes_written;
 			break;
 		}
 
@@ -693,6 +679,18 @@ error:
 	return rc;
 }
 
+static void dp_hdcp2p2_clear_cp_irq(struct dp_hdcp2p2_ctrl *ctrl)
+{
+	int rc = 0;
+	u8 buf = BIT(2);
+	u32 const default_timeout_us = 500;
+
+	rc = dp_hdcp2p2_aux_write_message(ctrl, &buf, 1,
+			DP_DPCD_CP_IRQ, default_timeout_us);
+	if (rc)
+		pr_err("error clearing irq_vector\n");
+}
+
 static int dp_hdcp2p2_cp_irq(void *input)
 {
 	int rc = 0;
@@ -727,6 +725,7 @@ static int dp_hdcp2p2_cp_irq(void *input)
 
 	kthread_queue_work(&ctrl->worker, &ctrl->link);
 
+	dp_hdcp2p2_clear_cp_irq(ctrl);
 	return 0;
 error:
 	return rc;
@@ -812,7 +811,6 @@ void *sde_dp_hdcp2p2_init(struct sde_hdcp_init_data *init_data)
 
 	static struct hdcp_client_ops client_ops = {
 		.wakeup = dp_hdcp2p2_wakeup,
-		.notify_lvl_change = dp_hdcp2p2_min_level_change,
 	};
 	static struct dp_hdcp2p2_int_set int_set1[] = {
 		{BIT(17), "authentication successful", NULL},
@@ -866,6 +864,9 @@ void *sde_dp_hdcp2p2_init(struct sde_hdcp_init_data *init_data)
 		pr_err("Unable to register with HDCP 2.2 library\n");
 		goto error;
 	}
+
+	msm_hdcp_register_cb(init_data->msm_hdcp_dev, ctrl,
+		dp_hdcp2p2_min_level_change);
 
 	kthread_init_worker(&ctrl->worker);
 

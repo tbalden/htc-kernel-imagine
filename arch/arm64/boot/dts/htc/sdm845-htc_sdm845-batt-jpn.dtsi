@@ -5,4 +5,5 @@
 
 &pmi8998_charger {
 	/delete-property/ qcom,usb_in_isen-channel;
+	htc,usb_overheat_trigger_batt_delta_temp_thres = <400>;
 };

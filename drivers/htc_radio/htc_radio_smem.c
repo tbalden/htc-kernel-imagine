@@ -14,6 +14,8 @@
 
 #define DEVICE_TREE_RADIO_PATH "/chosen/radio"
 
+char htc_rom_version[16] = "";
+
 struct htc_smem_type *htc_radio_smem_via_smd;
 
 #ifdef CONFIG_DEBUG_FS
@@ -159,6 +161,8 @@ static int htc_radio_smem_probe(struct platform_device *pdev)
 							&htc_radio_smem_via_smd->htc_smem_ce_radio_dbg_flag_ext2);
 		of_property_read_u8_array(dnp, "htc_rom_ver",&htc_radio_smem_via_smd->htc_rom_ver[0],
 							sizeof(htc_radio_smem_via_smd->htc_rom_ver));
+		strlcpy(htc_rom_version, (char *)htc_radio_smem_via_smd->htc_rom_ver,
+			sizeof(htc_radio_smem_via_smd->htc_rom_ver));
 		of_property_read_u32(dnp, "htc_smem_pid", &htc_radio_smem_via_smd->htc_smem_pid);
 		of_property_read_u8_array(dnp, "htc_smem_cid", &htc_radio_smem_via_smd->htc_smem_cid[0],
 							sizeof(htc_radio_smem_via_smd->htc_smem_cid));
@@ -219,6 +223,44 @@ static void __exit htc_radio_smem_exit(void)
 {
 	platform_driver_unregister(&htc_radio_smem_driver);
 }
+
+static int htc_radio_set_ver(const char *val, const struct kernel_param *kp)
+{
+	char *ver_str = (char *)val;
+	size_t ver_len = strlen(ver_str);
+	unsigned int ver[4] = {0};
+
+	if (ver_len == 0)
+		return -EINVAL;
+
+	if (ver_str[ver_len - 1] == '\n')
+		ver_str[ver_len - 1] = '\0';
+
+	if (sscanf((char *)ver_str, "%u.%u.%u.%u",
+		&ver[0], &ver[1], &ver[2], &ver[3]) != 4) {
+		return -EINVAL;
+	}
+
+	pr_info("[smem] %s => %s\n",htc_radio_smem_via_smd->htc_rom_ver, ver_str);
+
+	strlcpy((char *)htc_radio_smem_via_smd->htc_rom_ver, ver_str,
+		sizeof(htc_radio_smem_via_smd->htc_rom_ver));
+
+	return param_set_copystring(ver_str, kp);
+}
+
+static const struct kernel_param_ops htc_radio_param_ops_ver = {
+	.set = htc_radio_set_ver,
+	.get = param_get_string,
+};
+
+static struct kparam_string htc_radio_param_string_ver = {
+	.maxlen = sizeof(htc_rom_version),
+	.string = htc_rom_version,
+};
+
+module_param_cb(rom_ver, &htc_radio_param_ops_ver, &htc_radio_param_string_ver,
+		0644);
 
 module_init(htc_radio_smem_init);
 module_exit(htc_radio_smem_exit);

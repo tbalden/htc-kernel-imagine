@@ -77,6 +77,7 @@ struct gether {
 	unsigned		ul_max_pkts_per_xfer;
 	unsigned		dl_max_pkts_per_xfer;
 	bool				multi_pkt_xfer;
+	bool				supports_multi_frame;
 	struct sk_buff			*(*wrap)(struct gether *port,
 						struct sk_buff *skb);
 	int				(*unwrap)(struct gether *port,
@@ -86,6 +87,7 @@ struct gether {
 	/* called on network open/close */
 	void				(*open)(struct gether *);
 	void				(*close)(struct gether *);
+	struct rndis_packet_msg_type	*header;
 };
 
 #define	DEFAULT_FILTER	(USB_CDC_PACKET_TYPE_BROADCAST \

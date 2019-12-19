@@ -15,6 +15,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+#include <linux/delay.h>
 #include <linux/time.h>
 #include <linux/hrtimer.h>
 #include <linux/timerqueue.h>
@@ -348,6 +349,10 @@ void alarm_init(struct alarm *alarm, enum alarmtimer_type type,
 	alarm->timer.function = alarmtimer_fired;
 	alarm->function = function;
 	alarm->type = type;
+	if (type >= ALARM_NUMTYPE) {
+		/* use ALARM_BOOTTIME as the default */
+		alarm->type = ALARM_BOOTTIME;
+	}
 	alarm->state = ALARMTIMER_STATE_INACTIVE;
 }
 EXPORT_SYMBOL_GPL(alarm_init);
@@ -432,7 +437,7 @@ int alarm_cancel(struct alarm *alarm)
 		int ret = alarm_try_to_cancel(alarm);
 		if (ret >= 0)
 			return ret;
-		cpu_relax();
+		udelay(1);
 	}
 }
 EXPORT_SYMBOL_GPL(alarm_cancel);

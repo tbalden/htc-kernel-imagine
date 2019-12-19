@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -295,6 +295,8 @@ void ipc_log_write(void *ctxt, struct encode_context *ectxt)
 		return;
 	}
 
+	if (ilctxt->disabled)
+		return;
 	read_lock_irqsave(&context_list_lock_lha1, flags);
 	spin_lock(&ilctxt->context_lock_lhb1);
 	while (ilctxt->write_avail <= ectxt->offset)
@@ -508,11 +510,14 @@ int ipc_log_string(void *ilctxt, const char *fmt, ...)
 {
 	struct encode_context ectxt;
 	int avail_size, data_size, hdr_size = sizeof(struct tsv_header);
+	struct ipc_log_context *ctxt = (struct ipc_log_context *)ilctxt;
 	va_list arg_list;
 
 	if (!ilctxt)
 		return -EINVAL;
 
+	if (ctxt->disabled)
+		return -EBUSY;
 	msg_encode_start(&ectxt, TSV_TYPE_STRING);
 	tsv_timestamp_write(&ectxt);
 	tsv_qtimer_write(&ectxt);
@@ -528,6 +533,32 @@ int ipc_log_string(void *ilctxt, const char *fmt, ...)
 	return 0;
 }
 EXPORT_SYMBOL(ipc_log_string);
+
+/*
+ * ipc_log_ctrl_all - disable/enable logging in all clients
+ *
+ * @ Data specified using format specifiers
+ */
+void ipc_log_ctrl_all(bool disable)
+{
+	struct ipc_log_context *ctxt = NULL;
+	unsigned long flags;
+
+	read_lock_irqsave(&context_list_lock_lha1, flags);
+	list_for_each_entry(ctxt, &ipc_log_context_list, list) {
+		if (disable) {
+			ipc_log_string(ctxt,
+				"LOGGING DISABLED FOR ALL CLIENTS!!\n");
+			ctxt->disabled = disable;
+		} else {
+			ctxt->disabled = disable;
+			ipc_log_string(ctxt,
+				"LOGGING ENABLED FOR ALL CLIENTS!!\n");
+		}
+	}
+	read_unlock_irqrestore(&context_list_lock_lha1, flags);
+}
+EXPORT_SYMBOL(ipc_log_ctrl_all);
 
 /**
  * ipc_log_extract - Reads and deserializes log
@@ -894,6 +925,7 @@ void ipc_log_context_free(struct kref *kref)
 int ipc_log_context_destroy(void *ctxt)
 {
 	struct ipc_log_context *ilctxt = (struct ipc_log_context *)ctxt;
+	struct dfunc_info *df_info = NULL, *tmp = NULL;
 	unsigned long flags;
 
 	if (!ilctxt)
@@ -904,6 +936,10 @@ int ipc_log_context_destroy(void *ctxt)
 	spin_lock(&ilctxt->context_lock_lhb1);
 	ilctxt->destroyed = true;
 	complete_all(&ilctxt->read_avail);
+	list_for_each_entry_safe(df_info, tmp, &ilctxt->dfunc_info_list, list) {
+		list_del(&df_info->list);
+		kfree(df_info);
+	}
 	spin_unlock(&ilctxt->context_lock_lhb1);
 
 	write_lock_irqsave(&context_list_lock_lha1, flags);

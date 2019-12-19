@@ -2214,7 +2214,7 @@ static int cxd224x_probe(struct i2c_client *client,
 	}
 	else{
 		I("%s: OFF mode charging, not Enable HVDD and return exit!\n", __func__);
-		return 0;
+		return -ENODEV;
 	}
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		E("%s : need I2C_FUNC_I2C\n", __func__);
@@ -2515,6 +2515,7 @@ err_request_irq_failed:
 	misc_deregister(&cxd224x_dev->cxd224x_device);
 err_misc_register:
 	mutex_destroy(&cxd224x_dev->read_mutex);
+	mutex_destroy(&cxd224x_dev->lock);
 err_exit:
 	if(irq_gpio_ok)
 		gpio_free(platform_data->irq_gpio);
@@ -2547,6 +2548,7 @@ static int cxd224x_remove(struct i2c_client *client)
 	free_irq(client->irq, cxd224x_dev);
 	misc_deregister(&cxd224x_dev->cxd224x_device);
 	mutex_destroy(&cxd224x_dev->read_mutex);
+	mutex_destroy(&cxd224x_dev->lock);
 	gpio_free(cxd224x_dev->irq_gpio);
 	gpio_free(cxd224x_dev->rst_gpio);
 	gpio_free(cxd224x_dev->wake_gpio);
@@ -2562,11 +2564,11 @@ static int cxd224x_remove(struct i2c_client *client)
 #ifdef CONFIG_PM
 static int cxd224x_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct cxd224x_platform_data *platform_data = pdev->dev.platform_data;
+	struct i2c_client *client = to_i2c_client(dev);
+	struct cxd224x_dev *cxd224x_dev = i2c_get_clientdata(client);
 
-	if (device_may_wakeup(&pdev->dev)) {
-		int irq = gpio_to_irq(platform_data->irq_gpio);
+	if (cxd224x_dev->users > 0 && device_may_wakeup(&client->dev)) {
+		int irq = gpio_to_irq(cxd224x_dev->irq_gpio);
 		enable_irq_wake(irq);
 	}
 	return 0;
@@ -2574,11 +2576,11 @@ static int cxd224x_suspend(struct device *dev)
 
 static int cxd224x_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct cxd224x_platform_data *platform_data = pdev->dev.platform_data;
+	struct i2c_client *client = to_i2c_client(dev);
+	struct cxd224x_dev *cxd224x_dev = i2c_get_clientdata(client);
 
-	if (device_may_wakeup(&pdev->dev)) {
-		int irq = gpio_to_irq(platform_data->irq_gpio);
+	if (device_may_wakeup(&client->dev)) {
+		int irq = gpio_to_irq(cxd224x_dev->irq_gpio);
 		disable_irq_wake(irq);
 	}
 	return 0;

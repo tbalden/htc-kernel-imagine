@@ -71,7 +71,8 @@ void RamRead32A( UINT_16 RamAddr, UINT_32 * ReadData )
 	uint8_t buf[4] = {0,0,0,0};
 	struct camera_io_master *io_master_info = g_io_master_info;
 
-	rc = cam_camera_cci_i2c_read_seq(io_master_info->cci_client, RamAddr, &buf[0], 2, 4);
+	rc = cam_camera_cci_i2c_read_seq(io_master_info->cci_client, RamAddr, &buf[0], 
+		    CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE, 4);
 	/*rc = io_master_info->i2c_func_tbl->i2c_read_seq(
 		io_master_info, RamAddr, &buf[0], 4);*/
 	if (rc < 0)

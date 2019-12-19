@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -3074,6 +3074,76 @@ struct afe_param_id_set_topology_cfg {
 	u32		topology_id;
 } __packed;
 
+#define MAX_ABR_LEVELS 5
+
+struct afe_bit_rate_level_map_t {
+	/*
+	 * Key value pair for link quality level to bitrate
+	 * mapping in AFE
+	 */
+	uint32_t link_quality_level;
+	uint32_t bitrate;
+} __packed;
+
+struct afe_quality_level_to_bitrate_info {
+	/*
+	 * Number of quality levels being mapped.
+	 * This will be equal to the size of mapping table.
+	 */
+	uint32_t num_levels;
+	/*
+	 * Quality level to bitrate mapping table
+	 */
+	struct afe_bit_rate_level_map_t bit_rate_level_map[MAX_ABR_LEVELS];
+} __packed;
+
+struct afe_imc_dec_enc_info {
+	/*
+	 * Decoder to encoder communication direction.
+	 * Transmit = 0 / Receive = 1
+	 */
+	uint32_t direction;
+	/*
+	 * Enable / disable IMC between decoder and encoder
+	 */
+	uint32_t enable;
+	/*
+	 * Purpose of IMC being set up between decoder and encoder.
+	 * Param ID defined for link quality feedback in LPASS will
+	 * be the default value sent as purpose.
+	 * Supported values:
+	 * AFE_ENCDEC_PURPOSE_ID_BT_INFO
+	 */
+	uint32_t purpose;
+	/*
+	 * Unique communication instance ID.
+	 * Data type a2dp_abr_instance used to set instance ID.
+	 * purpose and comm_instance together form the actual key
+	 * used in IMC registration, which must be the same for
+	 * encoder and decoder for which IMC is being set up.
+	 */
+	uint32_t comm_instance;
+} __packed;
+
+struct afe_abr_dec_cfg_t {
+	struct afe_imc_dec_enc_info imc_info;
+} __packed;
+
+struct afe_abr_enc_cfg_t {
+	/*
+	 * Link quality level to bitrate mapping info sent to DSP.
+	 */
+	struct afe_quality_level_to_bitrate_info mapping_info;
+	/*
+	 * Information to set up IMC between decoder and encoder.
+	 */
+	struct afe_imc_dec_enc_info imc_info;
+	/*
+	 * Flag to indicate whether ABR is enabled.
+	 */
+	bool is_abr_enabled;
+} __packed;
+
 #define AFE_PARAM_ID_APTX_SYNC_MODE  0x00013205
 
 struct afe_param_id_aptx_sync_mode {
@@ -3125,10 +3195,49 @@ struct afe_param_id_aptx_sync_mode {
 #define AFE_ENCODER_PARAM_ID_ENABLE_SCRAMBLING         0x0001323C
 
 /*
+ * Link quality level to bitrate mapping info sent to AFE Encoder.
+ * This parameter may be set runtime.
+ */
+#define AFE_ENCODER_PARAM_ID_BIT_RATE_LEVEL_MAP        0x000132E1
+
+/*
+ * Parameter to set up Inter Module Communication (IMC) between
+ * AFE Decoder and Encoder.
+ * This parameter may be set runtime.
+ */
+#define AFE_ENCDEC_PARAM_ID_DEC_TO_ENC_COMMUNICATION        0x0001323D
+
+/*
+ * Purpose of IMC set up between encoder and decoder.
+ * Communication instance and purpose together form the
+ * actual key used for IMC registration.
+ */
+#define AFE_ENCDEC_PURPOSE_ID_BT_INFO        0x000132E2
+
+#define AFE_MODULE_ID_DECODER        0x00013231
+
+/*
+ * Macro for defining the depacketizer ID: COP.
+ */
+#define AFE_MODULE_ID_DEPACKETIZER_COP        0x00013233
+
+/*
+ * Depacketizer type parameter for the #AVS_MODULE_ID_DECODER module.
+ * This parameter cannot be set runtime.
+ */
+#define AFE_DECODER_PARAM_ID_DEPACKETIZER_ID        0x00013235
+
+/*
  * Data format to send compressed data
  * is transmitted/received over Slimbus lines.
  */
 #define AFE_SB_DATA_FORMAT_GENERIC_COMPRESSED    0x3
+
+/*
+ * Parameter to send frame control size
+ * to DSP for AAC encoder in AFE.
+ */
+#define AFE_PARAM_ID_AAC_FRM_SIZE_CONTROL 0x000132EA
 
 /*
  * ID for AFE port module. This will be used to define port properties.
@@ -3300,6 +3409,23 @@ struct asm_aac_enc_cfg_v2_t {
 	uint32_t     sample_rate;
 } __packed;
 
+/* Structure to control frame size of AAC encoded frames. */
+struct asm_aac_frame_size_control_t {
+	/* Type of frame size control: MTU_SIZE / PEAK_BIT_RATE*/
+	uint32_t ctl_type;
+	/*
+	 * Control value
+	 * MTU_SIZE: MTU size in bytes
+	 * PEAK_BIT_RATE: Peak bitrate in bits per second.
+	 */
+	uint32_t ctl_value;
+} __packed;
+
+struct asm_aac_enc_cfg_t {
+	struct asm_aac_enc_cfg_v2_t aac_cfg;
+	struct asm_aac_frame_size_control_t frame_ctl;
+} __packed;
+
 /* FMT ID for apt-X Classic */
 #define ASM_MEDIA_FMT_APTX 0x000131ff
 
@@ -3425,6 +3551,7 @@ struct asm_ldac_specific_enc_cfg_t {
 struct asm_ldac_enc_cfg_t {
 	struct asm_custom_enc_cfg_t  custom_config;
 	struct asm_ldac_specific_enc_cfg_t  ldac_specific_config;
+	struct afe_abr_enc_cfg_t abr_config;
 } __packed;
 
 struct afe_enc_fmt_id_param_t {
@@ -3493,7 +3620,7 @@ struct afe_port_media_type_t {
 
 union afe_enc_config_data {
 	struct asm_sbc_enc_cfg_t sbc_config;
-	struct asm_aac_enc_cfg_v2_t aac_config;
+	struct asm_aac_enc_cfg_t aac_config;
 	struct asm_custom_enc_cfg_t  custom_config;
 	struct asm_celt_enc_cfg_t  celt_config;
 	struct asm_aptx_enc_cfg_t  aptx_config;
@@ -3504,6 +3631,11 @@ struct afe_enc_config {
 	u32 format;
 	u32 scrambler_mode;
 	union afe_enc_config_data data;
+};
+
+struct afe_dec_config {
+	u32 format;
+	struct afe_abr_dec_cfg_t abr_dec_cfg;
 };
 
 struct afe_enc_cfg_blk_param_t {
@@ -3538,6 +3670,39 @@ struct avs_enc_set_scrambler_param_t {
 	uint32_t enable_scrambler;
 };
 
+/*
+ * Payload of the AVS_ENCODER_PARAM_ID_BIT_RATE_LEVEL_MAP parameter.
+ */
+struct afe_enc_level_to_bitrate_map_param_t {
+	/*
+	 * Parameter for mapping link quality level to bitrate.
+	 */
+	struct afe_quality_level_to_bitrate_info mapping_table;
+};
+
+/*
+ * Payload of the AVS_ENCDEC_PARAM_ID_DEC_TO_ENC_COMMUNICATION parameter.
+ */
+struct afe_enc_dec_imc_info_param_t {
+	/*
+	 * Parameter to set up Inter Module Communication (IMC) between
+	 * AFE Decoder and Encoder.
+	 */
+	struct afe_imc_dec_enc_info imc_info;
+};
+
+/*
+ * Payload of the AVS_DECODER_PARAM_ID_DEPACKETIZER_ID parameter.
+ */
+struct avs_dec_depacketizer_id_param_t {
+	/*
+	 * Supported values:
+	 * #AVS_MODULE_ID_DEPACKETIZER_COP
+	 * Any OpenDSP supported values
+	 */
+	uint32_t dec_depacketizer_id;
+};
+
 union afe_port_config {
 	struct afe_param_id_pcm_cfg               pcm;
 	struct afe_param_id_i2s_cfg               i2s;
@@ -3552,11 +3717,15 @@ union afe_port_config {
 	struct afe_param_id_tdm_cfg               tdm;
 	struct afe_param_id_usb_audio_cfg         usb_audio;
 	struct afe_param_id_aptx_sync_mode        sync_mode_param;
+	struct asm_aac_frame_size_control_t       frame_ctl_param;
 	struct afe_enc_fmt_id_param_t             enc_fmt;
 	struct afe_port_media_type_t              media_type;
 	struct afe_enc_cfg_blk_param_t            enc_blk_param;
 	struct avs_enc_packetizer_id_param_t      enc_pkt_id_param;
 	struct avs_enc_set_scrambler_param_t      enc_set_scrambler_param;
+	struct avs_dec_depacketizer_id_param_t    dec_depkt_id_param;
+	struct afe_enc_level_to_bitrate_map_param_t    map_param;
+	struct afe_enc_dec_imc_info_param_t       imc_info_param;
 } __packed;
 
 struct afe_audioif_config_command_no_payload {
@@ -4139,6 +4308,66 @@ struct asm_softvolume_params {
 
 /* Rear right of center. */
 #define PCM_CHANNEL_RRC  16
+
+/* Secondary low frequency effect channel. */
+#define PCM_CHANNEL_LFE2  17
+
+/* Side left channel. */
+#define PCM_CHANNEL_SL  18
+
+/* Side right channel. */
+#define PCM_CHANNEL_SR  19
+
+/* Top front left channel. */
+#define PCM_CHANNEL_TFL  20
+
+/* Left vertical height channel. */
+#define PCM_CHANNEL_LVH  PCM_CHANNEL_TFL
+
+/* Top front right channel. */
+#define PCM_CHANNEL_TFR 21
+
+/* Right vertical height channel. */
+#define PCM_CHANNEL_RVH PCM_CHANNEL_TFR
+
+/* Top center channel. */
+#define PCM_CHANNEL_TC  22
+
+/* Top back left channel. */
+#define PCM_CHANNEL_TBL  23
+
+/* Top back right channel. */
+#define PCM_CHANNEL_TBR  24
+
+/* Top side left channel. */
+#define PCM_CHANNEL_TSL  25
+
+/* Top side right channel. */
+#define PCM_CHANNEL_TSR  26
+
+/* Top back center channel. */
+#define PCM_CHANNEL_TBC  27
+
+/* Bottom front center channel. */
+#define PCM_CHANNEL_BFC  28
+
+/* Bottom front left channel. */
+#define PCM_CHANNEL_BFL  29
+
+/* Bottom front right channel. */
+#define PCM_CHANNEL_BFR  30
+
+/* Left wide channel. */
+#define PCM_CHANNEL_LW  31
+
+/* Right wide channel. */
+#define PCM_CHANNEL_RW  32
+
+/* Left side direct channel. */
+#define PCM_CHANNEL_LSD  33
+
+/* Right side direct channel. */
+#define PCM_CHANNEL_RSD  34
 
 #define PCM_FORMAT_MAX_NUM_CHANNEL  8
 

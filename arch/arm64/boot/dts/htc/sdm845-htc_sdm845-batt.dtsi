@@ -88,6 +88,7 @@
 	htc,htc-chg-ready = <&tlmm 93 0>;
 	htc,qc3-vol-limit = <10>;
 	htc,qc3-curr-limit-ma = <2200>;
+	htc,usb_overheat_trigger_batt_delta_temp_thres = <150>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,otg-cl-ua = <1000000>;
 	bob-supply = <&pmi8998_bob>;
@@ -99,8 +100,8 @@
 	qcom,fg-rsense-sel = <0>;
 	qcom,fg-chg-term-current = <50>;
 	qcom,fg-cutoff-voltage = <3320>;
-	qcom,fg-sys-term-current = <(-410)>;
-	qcom,fg-jeita-thresholds = <0 10 48 55>;
+	qcom,fg-sys-term-current = <(-200)>;
+	qcom,fg-jeita-thresholds = <0 10 45 55>; /* After HW test, set 45 to meet 46<=TEMP<55 criteria */
 	qcom,fg-jeita-hyst-temp = <2>;
 	qcom,fg-recharge-voltage = <4300>;
 	qcom,fg-cutoff-current = <100>;
@@ -122,12 +123,12 @@
 		htc,batt-full-current-ma = <410>;
 		htc,health-level = <6>;
 		htc,batt-health-good = <2>;
-		htc,chg-vbatt-thresholds = <4100 4100 4250 4250 4100 4100>;	/* htc,health-level * 1 */
-		htc,chg-vbatt-recover-thresholds = <3900 3900 4100 4100 4000 4000>;
+		htc,chg-vbatt-thresholds = <4100 4100 4250 4250 3900 3900>;	/* htc,health-level * 1 */
+		htc,chg-vbatt-recover-thresholds = <3900 3900 4100 4100 3800 3800>;
 		htc,chg-temp-thresholds =	<(-10000)   20>,	/* htc,health-level * 2 */
 						<       0  120>,
 						<     420  100>,	/* GOOD */
-						<     480  400>,
+						<     460  400>,
 						<     550  460>,
 						<   10000  530>;
 		htc,chg-fcc-limits = <					/* 4 * htc,health-level */

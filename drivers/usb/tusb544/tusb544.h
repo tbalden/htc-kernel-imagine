@@ -48,12 +48,15 @@
  * DP0 -- RX2 >> 0x0A, DP0 -- RX1 >> 0xE for CC1
  * According HW design, select the settings.
  */
-#define DP_ON_CC1	0x0E
-#define DP_ON_CC2	0x0A
+#define DP_ON_CC1_C	0x0A
+#define DP_ON_CC2_C	0x0E
+#define DP_ON_CC1_D	0x0B
+#define DP_ON_CC2_D	0x0F
 
 /* register DP_AUX value */
 #define ENABLE_AUX_SNOOP	0x00
-#define DISABLE_AUX_SNOOP	0x80
+#define DISABLE_AUX_SNOOP_C	0x80
+#define DISABLE_AUX_SNOOP_D	0x8C
 #define AUX_SBU_CC1	0x10	/* AUXP to SBU1 and AUXN to SBU2 */
 #define AUX_SBU_CC2	0x20	/* AUXN to SBU2 and AUXP to SBU1 */
 #define EQ_OVERRIDE	0x10
@@ -72,4 +75,4 @@ enum cc_orientation {
 	CC_ORIENTATION_CC2 = 2,
 };
 
-void tusb544_update_state(enum cc_state cc_state, enum cc_orientation cc_orientation);
+void tusb544_update_state(enum cc_state cc_state, enum cc_orientation cc_orientation, u8 pin);

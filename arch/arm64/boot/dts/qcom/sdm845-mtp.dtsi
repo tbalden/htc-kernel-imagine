@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,10 @@
 #include "sdm845-pmic-overlay.dtsi"
 #include "sdm845-pinctrl-overlay.dtsi"
 //HTC_Matk #include "sdm845-camera-sensor-mtp.dtsi"
+
+&qupv3_se10_i2c {
 #include "smb1355.dtsi"
+};
 
 &vendor {
 	bluetooth: bt_wcn3990 {
@@ -317,20 +320,11 @@
 };
 
 &usb1 {
-	status = "okay";
 	extcon = <&extcon_usb1>;
-};
-
-&qusb_phy1 {
-	status = "okay";
 };
 
 &ext_5v_boost {
 	status = "ok";
-};
-
-&usb_qmp_phy {
-	status = "okay";
 };
 
 &pm8998_vadc {

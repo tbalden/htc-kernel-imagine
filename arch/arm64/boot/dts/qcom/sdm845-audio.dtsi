@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,24 +27,48 @@
 		qcom,clk-div = <192>;
 		qcom,clk-mult = <10>;
 	};
+};
 
+&audio_apr {
 	snd_934x: sound-tavil {
 		compatible = "qcom,sdm845-asoc-snd-tavil";
 		qcom,model = "sdm845-tavil-snd-card";
+		/* htc typec headset detection */
+		htc,aud_gpio_ids = "htc,aud_typec_id1",
+				"htc,aud_typec_id2",
+				"htc,aud_usb_position";
+
+		htc,aud_gpio_switches = "htc,miclr_flip_en",
+				"htc,miclr_dgnd_sw_en";
+
+		htc,aud_3v3_en = <&pm8005_gpios 1 0>;
+		htc,aud_usb_position = <&tlmm 128 0>;
+		htc,aud_typec_id1 = <&pm8998_gpios 12 0>;
+		htc,aud_typec_id2 = <&pm8998_gpios 13 0>;
+		htc,miclr_flip_en = <&tlmm 7 0>;
+		htc,miclr_dgnd_sw_en = <&tlmm 104 0>;
+		htc,hsmic_2v85_en = <&pm8998_gpios 15 0>;
+
+/*
+		htc,aud_remote_sensor = <&pm8998_gpios 9 0>;
+		htc,adapter_35mm_threshold = <330 800>;
+		htc,adapter_25mm_threshold = <1250 2850>;
+
+		htc,headset_adc_channel = <19>;
+		qcom,headset-vadc = <&pm8998_vadc>;
+		htc,mbhc_hsdet_l = <&tlmm 79 0>;
+*/
+		htc,usb_hph_switch = "fsa4476";
+		htc,usb_hph_switch_gpio0 = <&pm8998_gpios 10 0>; /* FSA4476 ENN */
+		htc,usb_hph_switch_gpio1 = <&pm8998_gpios 6 0>; /* FSA4476 EN1 */
+		htc,usb_hph_switch_gpio2 = <&pm8998_gpios 7 0>; /* FSA4476 EN2 */
+
+		htc,mbhc-swap-detect = <0>; /* Disable MBHC SWAP detection */
 		qcom,ext-disp-audio-rx;
 		qcom,wcn-btfm;
 		qcom,mi2s-audio-intf;
 		qcom,auxpcm-audio-intf;
 		qcom,msm-mi2s-master = <1>, <1>, <1>, <1>;
-
-		reg = <0x1711a000 0x4>,
-		      <0x1711b000 0x4>,
-		      <0x1711c000 0x4>,
-		      <0x1711d000 0x4>;
-		reg-names = "lpaif_pri_mode_muxsel",
-			    "lpaif_sec_mode_muxsel",
-			    "lpaif_tert_mode_muxsel",
-			    "lpaif_quat_mode_muxsel";
 
 		asoc-platform = <&pcm0>, <&pcm1>, <&pcm2>, <&voip>, <&voice>,
 				<&loopback>, <&compress>, <&hostless>,

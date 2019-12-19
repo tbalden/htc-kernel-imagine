@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -34,6 +34,13 @@ enum nat_table_type {
 
 #define NAT_TABLE_ENTRY_SIZE_BYTE 32
 #define NAT_INTEX_TABLE_ENTRY_SIZE_BYTE 4
+
+/*
+ * Max NAT table entries is limited 1000 entries.
+ * Limit the memory size required by user to prevent kernel memory starvation
+ */
+#define IPA_TABLE_MAX_ENTRIES 1000
+#define MAX_ALLOC_NAT_SIZE (IPA_TABLE_MAX_ENTRIES * NAT_TABLE_ENTRY_SIZE_BYTE)
 
 static int ipa_nat_vma_fault_remap(
 	 struct vm_area_struct *vma, struct vm_fault *vmf)
@@ -270,6 +277,13 @@ int ipa2_allocate_nat_device(struct ipa_ioc_nat_alloc_mem *mem)
 		goto bail;
 	}
 
+	if (mem->size > MAX_ALLOC_NAT_SIZE) {
+		IPAERR("Trying allocate more size = %zu, Max allowed = %d\n",
+				mem->size, MAX_ALLOC_NAT_SIZE);
+		result = -EPERM;
+		goto bail;
+	}
+
 	if (mem->size <= 0 ||
 			nat_ctx->is_dev_init == true) {
 		IPAERR_RL("Invalid Parameters or device is already init\n");
@@ -326,6 +340,11 @@ int ipa2_nat_init_cmd(struct ipa_ioc_v4_nat_init *init)
 	u32 offset = 0;
 	size_t tmp;
 	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
+
+	if (!ipa_ctx->nat_mem.is_dev_init) {
+		IPAERR_RL("Nat table not initialized\n");
+		return -EPERM;
+	}
 
 	IPADBG("\n");
 	if (init->table_entries == 0) {
@@ -576,6 +595,11 @@ int ipa2_nat_dma_cmd(struct ipa_ioc_nat_dma_cmd *dma)
 	int ret = 0;
 	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
+	if (!ipa_ctx->nat_mem.is_dev_init) {
+		IPAERR_RL("Nat table not initialized\n");
+		return -EPERM;
+	}
+
 	IPADBG("\n");
 	if (dma->entries <= 0) {
 		IPAERR_RL("Invalid number of commands %d\n",
@@ -762,17 +786,21 @@ int ipa2_nat_del_cmd(struct ipa_ioc_v4_nat_del *del)
 	int result;
 	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
+	if (!ipa_ctx->nat_mem.is_dev_init) {
+		IPAERR_RL("Nat table not initialized\n");
+		return -EPERM;
+	}
+
+	if (ipa_ctx->nat_mem.public_ip_addr) {
+		IPAERR_RL("Public IP addr not assigned and trying to delete\n");
+		return -EPERM;
+	}
+
 	IPADBG("\n");
 	if (ipa_ctx->nat_mem.is_tmp_mem) {
 		IPAERR("using temp memory during nat del\n");
 		mem_type = IPA_NAT_SYSTEM_MEMORY;
 		base_addr = ipa_ctx->nat_mem.tmp_dma_handle;
-	}
-
-	if (del->public_ip_addr == 0) {
-		IPADBG("Bad Parameter\n");
-		result = -EPERM;
-		goto bail;
 	}
 
 	memset(&desc, 0, sizeof(desc));

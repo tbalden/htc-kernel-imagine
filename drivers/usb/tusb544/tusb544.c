@@ -137,18 +137,18 @@ static int tusb544_vdd_switch(struct tusb544_chip *chip, bool enabled)
 	return 0;
 }
 
-static int tusb544_aux_snoop(struct tusb544_chip *chip, bool enabled)
+static int tusb544_aux_snoop(struct tusb544_chip *chip, bool enabled, u8 pin)
 {
 	int ret = 0;
-	u16 aux_ctrl_value = DISABLE_AUX_SNOOP;
+	u16 aux_ctrl_value = (3 != pin) ? DISABLE_AUX_SNOOP_C : DISABLE_AUX_SNOOP_D;
 
 	if (enabled) {
 		aux_ctrl_value = ENABLE_AUX_SNOOP;
 	} else {
 		if (chip->cc_orientation == CC_ORIENTATION_CC1) {
-			aux_ctrl_value = DISABLE_AUX_SNOOP | AUX_SBU_CC1;
+			aux_ctrl_value |= AUX_SBU_CC1;
 		} else if (chip->cc_orientation == CC_ORIENTATION_CC2) {
-			aux_ctrl_value = DISABLE_AUX_SNOOP | AUX_SBU_CC2;
+			aux_ctrl_value |= AUX_SBU_CC2;
 		}
 	}
 
@@ -165,7 +165,7 @@ static int tusb544_aux_snoop(struct tusb544_chip *chip, bool enabled)
 	return ret;
 }
 
-static void tusb544_dp_update_state(void)
+static void tusb544_dp_update_state(u8 pin)
 {
 	struct tusb544_chip *chip = tusb_chip;
 	int ret = 0;
@@ -174,15 +174,15 @@ static void tusb544_dp_update_state(void)
 	u8 config_ctrl_value = 0;
 
 	if (chip->cc_orientation == CC_ORIENTATION_CC1)
-		config_ctrl_value = DP_ON_CC1;
+		config_ctrl_value = (3 != pin) ? DP_ON_CC1_C : DP_ON_CC1_D;
 	else if (chip->cc_orientation == CC_ORIENTATION_CC2)
-		config_ctrl_value = DP_ON_CC2;
+		config_ctrl_value = (3 != pin) ? DP_ON_CC2_C : DP_ON_CC2_D;
 
 	ret = tusb544_1v8_switch(chip, switch_1v8_enabled);
 	if (ret < 0)
 		return;
 
-	ret = tusb544_aux_snoop(chip, aux_snoop_enabled);
+	ret = tusb544_aux_snoop(chip, aux_snoop_enabled, pin);
 	if (ret < 0)
 		return;
 
@@ -272,7 +272,7 @@ static void tusb544_usb3_ui_update_state(void)
 	if (vdd_enabled && DELAY_POWER_SEQUENCE > 0)
 		msleep(DELAY_POWER_SEQUENCE);
 
-	ret = tusb544_aux_snoop(chip, aux_snoop_enabled);
+	ret = tusb544_aux_snoop(chip, aux_snoop_enabled, 0);
 	if (ret < 0)
 		return;
 
@@ -371,7 +371,7 @@ static void tusb544_usb3_update_state(struct work_struct *w)
 	if (vdd_enabled && DELAY_POWER_SEQUENCE > 0)
 		msleep(DELAY_POWER_SEQUENCE);
 
-	ret = tusb544_aux_snoop(chip, aux_snoop_enabled);
+	ret = tusb544_aux_snoop(chip, aux_snoop_enabled, 0);
 	if (ret < 0)
 		return;
 
@@ -421,7 +421,7 @@ static void tusb544_usb3_update_state(struct work_struct *w)
 	return;
 }
 
-void tusb544_update_state(enum cc_state cc_state, enum cc_orientation cc_orientation)
+void tusb544_update_state(enum cc_state cc_state, enum cc_orientation cc_orientation, u8 pin)
 {
 	struct tusb544_chip *chip = tusb_chip;
 
@@ -440,7 +440,7 @@ void tusb544_update_state(enum cc_state cc_state, enum cc_orientation cc_orienta
 	} else if (cc_state != CC_STATE_DP) {
 		tusb544_usb3_ui_update_state();
 	} else {
-		tusb544_dp_update_state();
+		tusb544_dp_update_state(pin);
 	}
 
 	mutex_unlock(&chip->state_lock);
@@ -523,7 +523,7 @@ static int tusb544_i2c_probe(struct i2c_client *client,
 		return ret;
 	}
 
-	tusb544_update_state(CC_STATE_OPEN, CC_ORIENTATION_NONE);
+	tusb544_update_state(CC_STATE_OPEN, CC_ORIENTATION_NONE, 0);
 
 	chip->probe_done = true;
 

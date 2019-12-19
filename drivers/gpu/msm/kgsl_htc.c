@@ -75,9 +75,9 @@ static void do_print_mem_detail(struct work_struct *work)
 		if (!private)
 			continue;
 
-		if (atomic_long_read(&private->stats[KGSL_MEM_ENTRY_PAGE_ALLOC].cur) != 0)
-			printk("kgsl: proc %5d alloc page %8ld bytes\n", private->pid,
-							atomic_long_read(&private->stats[KGSL_MEM_ENTRY_PAGE_ALLOC].cur));
+		if (private->stats[KGSL_MEM_ENTRY_PAGE_ALLOC].cur != 0)
+			printk("kgsl: proc %5d alloc page %8llu bytes\n", private->pid,
+							private->stats[KGSL_MEM_ENTRY_PAGE_ALLOC].cur);
 	}
 	mutex_unlock(&driver->process_mutex);
 }

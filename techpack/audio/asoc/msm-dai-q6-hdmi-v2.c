@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -142,7 +142,7 @@ static int msm_dai_q6_ext_disp_drift_get(struct snd_kcontrol *kcontrol,
 	struct msm_dai_q6_hdmi_dai_data *dai_data = dev_get_drvdata(dai->dev);
 
 	if (!test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
-		pr_err("%s:  afe port not started. status_mask = %ld\n",
+		pr_debug("%s:  afe port not started. status_mask = %ld\n",
 			__func__, *dai_data->status_mask);
 		goto done;
 	}
@@ -243,7 +243,12 @@ static int msm_dai_q6_hdmi_hw_params(struct snd_pcm_substream *substream,
 		dai_data->port_config.hdmi_multi_ch.channel_allocation = 0x12;
 		break;
 	case 8:
-		dai_data->port_config.hdmi_multi_ch.channel_allocation = 0x13;
+		if (dai_data->ca.set_ca == false) {
+			dai_data->port_config.hdmi_multi_ch.channel_allocation = 0x13;
+		} else {
+			dai_data->port_config.hdmi_multi_ch.channel_allocation =
+				dai_data->ca.ca;
+		}
 		break;
 	default:
 		dev_err(dai->dev, "invalid Channels = %u\n",
@@ -535,6 +540,7 @@ static struct platform_driver msm_dai_q6_hdmi_driver = {
 		.name = "msm-dai-q6-hdmi",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_dai_q6_hdmi_dt_match,
+		.suppress_bind_attrs = true,
 	},
 };
 

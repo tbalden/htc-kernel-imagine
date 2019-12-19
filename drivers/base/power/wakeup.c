@@ -1157,20 +1157,21 @@ void htc_print_wakeup_source(struct wakeup_source *ws)
         if (ws->active) {
                 if (ws->timer_expires) {
 			long timeout = ws->timer_expires - jiffies;
-			if (timeout > 0){
-				if(ws->name) {
-					printk(KERN_CONT " '%s', time left %ld ticks; ", ws->name, timeout);
-				} else {
-					printk(KERN_CONT "'null', time left %ld ticks; ", timeout);
-				}
-			}
-		} else {
-			if(ws->name) {
-				printk(KERN_CONT " '%s' ", ws->name);
-			}else{
-				printk(KERN_CONT " 'null' ");
-			}
-		}
+                         if (timeout > 0) {
+                             if(ws->name) {
+                                 printk(" '%s', time left %ld ticks; ", ws->name, timeout);
+
+                             } else {
+                                 printk("'null', time left %ld ticks; ", timeout);
+                             }
+                         }
+                 } else {
+                     if(ws->name) {
+                         printk(" '%s' ", ws->name);
+                     } else {
+                         printk(" 'null' ");
+                     }
+                 }
         }
 }
 
@@ -1180,8 +1181,13 @@ void htc_print_active_wakeup_sources(void)
 
         printk("wakeup sources: ");
         rcu_read_lock();
-        list_for_each_entry_rcu(ws, &wakeup_sources, entry)
-                htc_print_wakeup_source(ws);
+        list_for_each_entry_rcu(ws, &wakeup_sources, entry) {
+	 if(!ws) {
+	     printk("null");
+	 } else {
+	     htc_print_wakeup_source(ws);
+	 }
+	}
         rcu_read_unlock();
         printk(KERN_CONT "\n");
 }

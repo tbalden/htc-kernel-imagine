@@ -96,7 +96,7 @@ int usbpd_send_vdm(struct usbpd *pd, u32 vdm_hdr, const u32 *vdos,
  */
 int usbpd_send_svdm(struct usbpd *pd, u16 svid, u8 cmd,
 		enum usbpd_svdm_cmd_type cmd_type, int obj_pos,
-		const u32 *vdos, int num_vdos);
+		const u32 *vdos, int num_vdos, u8 pin);
 
 /*
  * Get current status of CC pin orientation.
@@ -131,7 +131,7 @@ static inline int usbpd_send_vdm(struct usbpd *pd, u32 vdm_hdr, const u32 *vdos,
 
 static inline int usbpd_send_svdm(struct usbpd *pd, u16 svid, u8 cmd,
 		enum usbpd_svdm_cmd_type cmd_type, int obj_pos,
-		const u32 *vdos, int num_vdos)
+		const u32 *vdos, int num_vdos, u8 pin)
 {
 	return -EINVAL;
 }
@@ -150,14 +150,14 @@ static inline int usbpd_enter_mode(struct usbpd *pd, u16 svid, int mode,
 		const u32 *vdo)
 {
 	return usbpd_send_svdm(pd, svid, USBPD_SVDM_ENTER_MODE,
-			SVDM_CMD_TYPE_INITIATOR, mode, vdo, vdo ? 1 : 0);
+			SVDM_CMD_TYPE_INITIATOR, mode, vdo, vdo ? 1 : 0, 0);
 }
 
 static inline int usbpd_exit_mode(struct usbpd *pd, u16 svid, int mode,
 		const u32 *vdo)
 {
 	return usbpd_send_svdm(pd, svid, USBPD_SVDM_EXIT_MODE,
-			SVDM_CMD_TYPE_INITIATOR, mode, vdo, vdo ? 1 : 0);
+			SVDM_CMD_TYPE_INITIATOR, mode, vdo, vdo ? 1 : 0, 0);
 }
 
 #endif /* __LINUX_USB_USBPD_H */

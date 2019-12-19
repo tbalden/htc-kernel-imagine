@@ -110,6 +110,7 @@ unsigned int g_batt_cycle_checksum;
 static bool g_usb_overheat = false;
 static int g_usb_overheat_check_count = 0;
 static int g_usb_conn_temp = 300;
+static int g_usb_overheat_trigger_batt_delta_temp_thres = 150;
 
 /*cable impedance*/
 static bool gs_measure_cable_impedance = true;
@@ -156,6 +157,7 @@ static unsigned int g_pre_total_level_raw = 0;
 
 /* Quick charger detection */
 static bool g_is_quick_charger = false;
+static unsigned int quickchg_detect_counter = 0;
 
 /* Screen ON ibat limitation */
 #define SCREEN_LIMIT_IBAT_DELAY_MS	60000
@@ -2049,7 +2051,6 @@ extern void htc_typec_enable(bool enable);
 #define HTC_USB_OVERHEAT_POLLING_CONN_BATT_DELTA_TEMP_THRES 100
 #define HTC_USB_OVERHEAT_POLLING_TIME_MS 5000
 #define HTC_USB_OVERHEAT_TRIGGER_THRES 680
-#define HTC_USB_OVERHEAT_TRIGGER_BATT_DELTA_TEMP_THRES 150
 #define HTC_USB_OVERHEAT_RECOVER_THRES 600
 static void htc_usb_overheat_routine(void)
 {
@@ -2121,7 +2122,7 @@ static void htc_usb_overheat_worker(struct work_struct *work)
 
 			// trigger usb overheat when temp reach 68 degree or delta temp between battery and connector reache 15 degree
 			if ((usb_conn_temp >= HTC_USB_OVERHEAT_TRIGGER_THRES) ||
-					(usb_conn_batt_delta_temp >= HTC_USB_OVERHEAT_TRIGGER_BATT_DELTA_TEMP_THRES)){
+					(usb_conn_batt_delta_temp >= g_usb_overheat_trigger_batt_delta_temp_thres)){
 				s_polling_cnt = 0;
 				g_htc_usb_overheat = true;
 				gs_update_PSY = true;
@@ -2761,7 +2762,7 @@ static void htc_iusb_5v_2a_ability_check_work(struct work_struct *work)
 static void htc_quick_charger_check_work(struct work_struct *work)
 {
 	int 	chg_type = get_property(htc_batt_info.usb_psy, POWER_SUPPLY_PROP_REAL_TYPE);
-	BATT_LOG("%s: charger type: %d", __func__, chg_type);
+//	BATT_LOG("%s: charger type: %d", __func__, chg_type);
 
 	if ((chg_type == POWER_SUPPLY_TYPE_USB_HVDCP) ||
 			(chg_type == POWER_SUPPLY_TYPE_USB_HVDCP_3) ||
@@ -2771,6 +2772,12 @@ static void htc_quick_charger_check_work(struct work_struct *work)
 		htc_batt_schedule_batt_info_update();
 	} else
 		g_is_quick_charger = false;
+
+	if((g_is_quick_charger == false) && (quickchg_detect_counter < 5)) {
+		schedule_delayed_work(&htc_batt_info.quick_charger_check_work, msecs_to_jiffies(4000));
+	}
+	quickchg_detect_counter++;
+	BATT_LOG("%s: charger type: %d, g_is_quick_charger: %d, quickchg_detect_counter: %d\n", __func__, chg_type, g_is_quick_charger, quickchg_detect_counter);
 }
 
 static void screen_ibat_limit_enable_worker(struct work_struct *work)
@@ -2892,7 +2899,7 @@ static void batt_worker(struct work_struct *work)
 		}
 
 		if ((htc_batt_info.prev.charging_source == POWER_SUPPLY_TYPE_UNKNOWN) || (s_first)) {
-			schedule_delayed_work(&htc_batt_info.quick_charger_check_work, msecs_to_jiffies(20000));
+			schedule_delayed_work(&htc_batt_info.quick_charger_check_work, msecs_to_jiffies(4000));
 			schedule_delayed_work(&htc_batt_info.screen_ibat_limit_enable_work, msecs_to_jiffies(SCREEN_LIMIT_IBAT_DELAY_MS));
 		}
 
@@ -3025,6 +3032,7 @@ static void batt_worker(struct work_struct *work)
 			charging_enabled = 0;
 			pwrsrc_enabled = 0;
 			g_is_quick_charger = false;
+			quickchg_detect_counter = 0;
 			g_usb_overheat = false;
 			g_usb_overheat_check_count = 0;
 			g_need_to_check_impedance = true;
@@ -4912,6 +4920,13 @@ static int __init htc_battery_init(void)
 				pr_err("%s: error reading htc,qc3-curr-limit-ma.\n", __func__);
 			else
 				htc_batt_info.qc3_current_ua = val * 1000;
+
+			// read usb_overheat_trigger_batt_delta_temp_thres
+			ret = of_property_read_u32(node, "htc,usb_overheat_trigger_batt_delta_temp_thres", &val);
+			if (ret)
+			    pr_err("%s: error reading htc,usb_overheat_trigger_batt_delta_temp_thres\n", __func__);
+			else
+			    g_usb_overheat_trigger_batt_delta_temp_thres = val;
 		}
 	} else {
 		pr_err("%s: can't find compatible 'qcom,qpnp-smb2'\n", __func__);

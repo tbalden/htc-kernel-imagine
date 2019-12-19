@@ -2850,12 +2850,12 @@ static int stmvl53l0_config_use_case(struct stmvl53l0_data *data)
     if (papi_func_tbl->SetLimitCheckEnable != NULL) {
         Status = papi_func_tbl->SetLimitCheckEnable(vl53l0_dev,
                 VL53L0_CHECKENABLE_SIGMA_FINAL_RANGE, 1);
-    }
-    if (Status == VL53L0_ERROR_NONE) {
-        Status = papi_func_tbl->SetLimitCheckEnable(vl53l0_dev,
-                VL53L0_CHECKENABLE_SIGNAL_RATE_FINAL_RANGE, 1);
-    } else {
-        vl53l0_errmsg("SetLimitCheckEnable(SIGMA_FINAL_RANGE) failed with errcode = %d\n", Status);
+        if (Status == VL53L0_ERROR_NONE) {
+            Status = papi_func_tbl->SetLimitCheckEnable(vl53l0_dev,
+                    VL53L0_CHECKENABLE_SIGNAL_RATE_FINAL_RANGE, 1);
+        } else {
+            vl53l0_errmsg("SetLimitCheckEnable(SIGMA_FINAL_RANGE) failed with errcode = %d\n", Status);
+        }
     }
     if (Status == VL53L0_ERROR_NONE) {
         Status = papi_func_tbl->SetLimitCheckValue(vl53l0_dev,

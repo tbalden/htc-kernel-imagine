@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 TRUSTONIC LIMITED
+ * Copyright (c) 2013-2018 TRUSTONIC LIMITED
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -13,5 +13,5 @@
  */
 #ifndef MOBICORE_COMPONENT_BUILD_TAG
 #define MOBICORE_COMPONENT_BUILD_TAG \
-	"t-base-QC-MSM8996-Android-400A-V010-20171105_223917_40062_70742"
+	"t-base-QC-MSM8996-Android-410a-V002-20181122_223910_59913_88795"
 #endif

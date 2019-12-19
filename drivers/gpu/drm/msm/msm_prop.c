@@ -12,6 +12,8 @@
 
 #include "msm_prop.h"
 
+int  is_lp1_mode = 0;
+
 void msm_property_init(struct msm_property_info *info,
 		struct drm_mode_object *base,
 		struct drm_device *dev,
@@ -452,10 +454,19 @@ int msm_property_atomic_set(struct msm_property_info *info,
 			property_state->values[property_idx].value = val;
 			_msm_property_set_dirty_no_lock(info, property_state,
 					property_idx);
-
 			DBG("%s - %lld", property->name, val);
+			if(!strcmp(property->name , "LP"))
+			{
+				if(val == 1)
+					is_lp1_mode = 1;
+				else
+					is_lp1_mode = 0;
+				printk("%s - %lld", property->name, val);
+			 }
 		}
+
 		mutex_unlock(&info->property_lock);
+
 		rc = 0;
 	}
 

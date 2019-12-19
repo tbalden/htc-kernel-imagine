@@ -2,7 +2,7 @@
  * drivers/staging/android/ion/ion_system_heap.c
  *
  * Copyright (C) 2011 Google, Inc.
- * Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -36,7 +36,11 @@ static gfp_t high_order_gfp_flags = (GFP_HIGHUSER | __GFP_NOWARN |
 static gfp_t low_order_gfp_flags  = (GFP_HIGHUSER | __GFP_NOWARN);
 
 #ifndef CONFIG_ALLOC_BUFFERS_IN_4K_CHUNKS
-static const unsigned int orders[] = {9, 8, 4, 0};
+#if defined(CONFIG_IOMMU_IO_PGTABLE_ARMV7S)
+static const unsigned int orders[] = {8, 4, 0};
+#else
+static const unsigned int orders[] = {9, 4, 0};
+#endif
 #else
 static const unsigned int orders[] = {0};
 #endif
@@ -96,6 +100,11 @@ size_t ion_system_heap_secure_page_pool_total(struct ion_heap *heap,
 	}
 
 	return total << PAGE_SHIFT;
+}
+
+static int ion_heap_is_system_heap_type(enum ion_heap_type type)
+{
+	return type == ((enum ion_heap_type)ION_HEAP_TYPE_SYSTEM);
 }
 
 static struct page *alloc_buffer_page(struct ion_system_heap *heap,
@@ -267,6 +276,9 @@ static struct page_info *alloc_from_pool_preferred(
 	struct page_info *info;
 	int i;
 
+	if (buffer->flags & ION_FLAG_POOL_FORCE_ALLOC)
+		goto force_alloc;
+
 	info = kmalloc(sizeof(*info), GFP_KERNEL);
 	if (!info)
 		return NULL;
@@ -298,6 +310,7 @@ static struct page_info *alloc_from_pool_preferred(
 	}
 
 	kfree(info);
+force_alloc:
 	return alloc_largest_available(heap, buffer, size, max_order);
 }
 
@@ -354,6 +367,13 @@ static int ion_system_heap_allocate(struct ion_heap *heap,
 	int vmid = get_secure_vmid(buffer->flags);
 	struct device *dev = heap->priv;
 	size_t total_pages = 0;
+
+	if (ion_heap_is_system_heap_type(buffer->heap->type) &&
+	    is_secure_vmid_valid(vmid)) {
+		pr_info("%s: System heap doesn't support secure allocations\n",
+			__func__);
+		return -EINVAL;
+	}
 
 	if (align > PAGE_SIZE)
 		return -EINVAL;
@@ -758,8 +778,10 @@ static void ion_system_heap_destroy_pools(struct ion_page_pool **pools)
 {
 	int i;
 	for (i = 0; i < num_orders; i++)
-		if (pools[i])
+		if (pools[i]) {
 			ion_page_pool_destroy(pools[i]);
+			pools[i] = NULL;
+		}
 }
 
 /**
@@ -890,7 +912,7 @@ static int ion_system_contig_heap_allocate(struct ion_heap *heap,
 	if (align > (PAGE_SIZE << order))
 		return -EINVAL;
 
-	page = alloc_pages(low_order_gfp_flags | __GFP_ZERO, order);
+	page = alloc_pages(low_order_gfp_flags | __GFP_ZERO | __GFP_NOWARN, order);
 	if (!page)
 		return -ENOMEM;
 

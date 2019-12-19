@@ -19,7 +19,7 @@
 	regulator-min-microvolt = <1800000>;
 	regulator-max-microvolt = <1800000>;
 	qcom,init-voltage = <1800000>;
-	qcom,init-mode = <RPMH_REGULATOR_MODE_LDO_LPM>;
+	qcom,init-mode = <RPMH_REGULATOR_MODE_LPM>;
 };
 
 &soc {

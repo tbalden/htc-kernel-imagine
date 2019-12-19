@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -595,6 +595,14 @@ enum {
 #define EN_LEGACY_CABLE_DETECTION_BIT		BIT(1)
 #define ALLOW_PD_DRING_UFP_TCCDB_BIT		BIT(0)
 
+#define HVDCP_PULSE_COUNT_MAX_REG		(USBIN_BASE + 0x5B)
+#define HVDCP_PULSE_COUNT_MAX_QC2_MASK		GENMASK(7, 6)
+enum {
+	HVDCP_PULSE_COUNT_MAX_QC2_5V,
+	HVDCP_PULSE_COUNT_MAX_QC2_9V,
+	HVDCP_PULSE_COUNT_MAX_QC2_12V,
+	HVDCP_PULSE_COUNT_MAX_QC2_INVALID
+};
 #ifdef CONFIG_HTC_BATT
 #define USB_HVDCP_PULSE_COUNT_MAX		(USBIN_BASE + 0x5B)
 #define HVDCP_PULSE_COUNT_MAX_QC2P0		GENMASK(7, 6)

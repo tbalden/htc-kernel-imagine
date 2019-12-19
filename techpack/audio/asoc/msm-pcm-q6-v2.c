@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -638,6 +638,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	if (!prtd->audio_client) {
 		pr_info("%s: Could not allocate memory\n", __func__);
 		kfree(prtd);
+		prtd = NULL;
 		return -ENOMEM;
 	}
 
@@ -704,7 +705,10 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	prtd->set_channel_map = false;
 	prtd->reset_event = false;
 	runtime->private_data = prtd;
-	msm_adsp_init_mixer_ctl_pp_event_queue(soc_prtd);
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		msm_adsp_init_mixer_ctl_pp_event_queue(soc_prtd);
+
 	/* Vote to update the Rx thread priority to RT Thread for playback */
 	if ((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) &&
 	    (pdata->perf_mode == LOW_LATENCY_PCM_MODE))
@@ -1111,6 +1115,7 @@ static int msm_pcm_adsp_stream_cmd_put(struct snd_kcontrol *kcontrol,
 	struct msm_audio *prtd;
 	int ret = 0;
 	struct msm_adsp_event_data *event_data = NULL;
+	uint64_t actual_payload_len = 0;
 
 	if (!pdata) {
 		pr_err("%s pdata is NULL\n", __func__);
@@ -1132,6 +1137,12 @@ static int msm_pcm_adsp_stream_cmd_put(struct snd_kcontrol *kcontrol,
 	}
 
 	prtd = substream->runtime->private_data;
+	if (prtd == NULL) {
+		pr_err("%s prtd is null.\n", __func__);
+		ret = -EINVAL;
+		goto done;
+	}
+
 	if (prtd->audio_client == NULL) {
 		pr_err("%s prtd is null.\n", __func__);
 		ret = -EINVAL;
@@ -1147,8 +1158,17 @@ static int msm_pcm_adsp_stream_cmd_put(struct snd_kcontrol *kcontrol,
 		goto done;
 	}
 
-	if ((sizeof(struct msm_adsp_event_data) + event_data->payload_len) >=
-					sizeof(ucontrol->value.bytes.data)) {
+	actual_payload_len = sizeof(struct msm_adsp_event_data) +
+							event_data->payload_len;
+	if (actual_payload_len >= U32_MAX) {
+		pr_err("%s payload length 0x%X  exceeds limit",
+			__func__, event_data->payload_len);
+		ret = -EINVAL;
+		goto done;
+	}
+
+	if (event_data->payload_len > sizeof(ucontrol->value.bytes.data)
+			- sizeof(struct msm_adsp_event_data)) {
 		pr_err("%s param length=%d  exceeds limit",
 			__func__, event_data->payload_len);
 		ret = -EINVAL;
@@ -1307,7 +1327,7 @@ static int msm_pcm_volume_ctl_get(struct snd_kcontrol *kcontrol,
 		return -ENODEV;
 	}
 	if (!substream->runtime) {
-		pr_err("%s substream runtime not found\n", __func__);
+		pr_debug("%s substream runtime not found\n", __func__);
 		return 0;
 	}
 	prtd = substream->runtime->private_data;
@@ -1394,7 +1414,7 @@ static int msm_pcm_compress_ctl_get(struct snd_kcontrol *kcontrol,
 		return -EINVAL;
 	}
 	if (!substream->runtime) {
-		pr_err("%s substream runtime not found\n", __func__);
+		pr_debug("%s substream runtime not found\n", __func__);
 		return 0;
 	}
 	prtd = substream->runtime->private_data;
@@ -1890,6 +1910,7 @@ static struct platform_driver msm_pcm_driver = {
 		.name = "msm-pcm-dsp",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_pcm_dt_match,
+		.suppress_bind_attrs = true,
 	},
 	.probe = msm_pcm_probe,
 	.remove = msm_pcm_remove,

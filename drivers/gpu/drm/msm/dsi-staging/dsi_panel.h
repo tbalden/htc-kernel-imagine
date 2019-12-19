@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -161,6 +161,7 @@ enum esd_check_status_mode {
 
 struct drm_panel_esd_config {
 	bool esd_enabled;
+	bool cmd_channel;
 
 	enum esd_check_status_mode status_mode;
 	struct dsi_panel_cmd_set status_cmd;
@@ -172,6 +173,12 @@ struct drm_panel_esd_config {
 	u32 groups;
 };
 
+enum dsi_panel_type {
+	DSI_PANEL = 0,
+	EXT_BRIDGE,
+	DSI_PANEL_TYPE_MAX,
+};
+
 struct disp_en_source {
 	struct regulator *vreg;
 	u32 min_uV;
@@ -180,6 +187,7 @@ struct disp_en_source {
 
 struct dsi_panel {
 	const char *name;
+	enum dsi_panel_type type;
 	struct device_node *panel_of_node;
 	struct mipi_dsi_device mipi_device;
 
@@ -211,6 +219,7 @@ struct dsi_panel {
 	bool ulps_enabled;
 	bool ulps_suspend_enabled;
 	bool allow_phy_power_off;
+	atomic_t esd_recovery_pending;
 
 	bool panel_initialized;
 	bool te_using_watchdog_timer;
@@ -245,7 +254,10 @@ static inline void dsi_panel_release_panel_lock(struct dsi_panel *panel)
 
 struct dsi_panel *dsi_panel_get(struct device *parent,
 				struct device_node *of_node,
-				int topology_override);
+				int topology_override,
+				enum dsi_panel_type type);
+
+int dsi_panel_trigger_esd_attack(struct dsi_panel *panel);
 
 void dsi_panel_put(struct dsi_panel *panel);
 
@@ -309,5 +321,14 @@ int dsi_panel_switch(struct dsi_panel *panel);
 int dsi_panel_post_switch(struct dsi_panel *panel);
 
 void dsi_dsc_pclk_param_calc(struct msm_display_dsc_info *dsc, int intf_width);
+
+struct dsi_panel *dsi_panel_ext_bridge_get(struct device *parent,
+				struct device_node *of_node,
+				int topology_override);
+
+int dsi_panel_parse_esd_reg_read_configs(struct dsi_panel *panel,
+				struct device_node *of_node);
+
+void dsi_panel_ext_bridge_put(struct dsi_panel *panel);
 
 #endif /* _DSI_PANEL_H_ */

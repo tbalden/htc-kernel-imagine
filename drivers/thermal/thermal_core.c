@@ -53,6 +53,11 @@ MODULE_LICENSE("GPL v2");
 #define THERMAL_MAX_ACTIVE	16
 #define FORCE_CHARGE            (1<<2)
 
+//For CCC certification solution
+static char *ccc_cool[2]    = { "CCC_OVERHEAT=COOL", NULL };
+static char *ccc_overheat[2]    = { "CCC_OVERHEAT=OVERHEAT", NULL };
+static char *ccc_shutdown[2]    = { "CCC_OVERHEAT=SHUTDOWN", NULL };
+
 static DEFINE_IDR(thermal_tz_idr);
 static DEFINE_IDR(thermal_cdev_idr);
 static DEFINE_MUTEX(thermal_idr_lock);
@@ -678,6 +683,29 @@ temp_show(struct device *dev, struct device_attribute *attr, char *buf)
 	return sprintf(buf, "%d\n", temperature);
 }
 
+//For CCC certification solution
+static ssize_t
+temp_notify_ccc_store(struct device *dev, struct device_attribute *attr,
+	      const char *buf, size_t count)
+{
+	struct thermal_zone_device *tz = to_thermal_zone(dev);
+	unsigned int status=0;
+	unsigned long  value=0;
+	if (kstrtoul(buf, 10, &value))
+		return -EINVAL;
+
+	if (value == 1) //num 1 2 3 here just standfor an indicator, not means temp
+		status = kobject_uevent_env(&tz->device.kobj, KOBJ_CHANGE, ccc_cool);
+	if (value == 2)
+		status = kobject_uevent_env(&tz->device.kobj, KOBJ_CHANGE, ccc_overheat);
+	if (value == 3)
+		status = kobject_uevent_env(&tz->device.kobj, KOBJ_CHANGE, ccc_shutdown);
+
+	pr_warn("ccc surface temp uevent :temp=%s,sucess=%d\n",buf,status);
+
+	return count;
+}
+
 static ssize_t
 mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1256,6 +1284,8 @@ static DEVICE_ATTR(passive_delay, 0644, passive_delay_show,
 			passive_delay_store);
 static DEVICE_ATTR(polling_delay, 0644, polling_delay_show,
 			polling_delay_store);
+//For CCC certification solution
+static DEVICE_ATTR(temp_notify_ccc, S_IRUSR | S_IWUSR, NULL, temp_notify_ccc_store);
 
 /* sys I/F for cooling device */
 #define to_cooling_device(_dev)	\
@@ -1571,7 +1601,7 @@ int thermal_zone_bind_cooling_device(struct thermal_zone_device *tz,
 	 * based on the MACRO determine the default state to use or the
 	 * offset from the max_state.
 	 */
-	if (upper > (THERMAL_MAX_LIMIT - max_state)) {
+	if (upper >= (THERMAL_MAX_LIMIT - max_state)) {
 		/* upper default max_state */
 		if (upper == THERMAL_NO_LIMIT)
 			upper = max_state;
@@ -1579,7 +1609,7 @@ int thermal_zone_bind_cooling_device(struct thermal_zone_device *tz,
 			upper = max_state - (THERMAL_MAX_LIMIT - upper);
 	}
 
-	if (lower > (THERMAL_MAX_LIMIT - max_state)) {
+	if (lower >= (THERMAL_MAX_LIMIT - max_state)) {
 		/* lower default 0 */
 		if (lower == THERMAL_NO_LIMIT)
 			lower = 0;
@@ -2233,6 +2263,11 @@ struct thermal_zone_device *thermal_zone_device_register(const char *type,
 		goto unregister;
 
 	result = device_create_file(&tz->device, &dev_attr_polling_delay);
+	if (result)
+		goto unregister;
+
+	//For CCC certification solution
+	result = device_create_file(&tz->device, &dev_attr_temp_notify_ccc);
 	if (result)
 		goto unregister;
 

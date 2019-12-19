@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  * Copyright (C) 2014 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -26,6 +26,8 @@
 #include "sde_trace.h"
 #include "sde_connector.h"
 
+#define MULTIPLE_CONN_DETECTED(x) (x > 1)
+
 struct msm_commit {
 	struct drm_device *dev;
 	struct drm_atomic_state *state;
@@ -33,6 +35,8 @@ struct msm_commit {
 	bool nonblock;
 	struct kthread_work commit_work;
 };
+
+extern int  is_lp1_mode;
 
 static BLOCKING_NOTIFIER_HEAD(msm_drm_notifier_list);
 
@@ -112,6 +116,66 @@ static void commit_destroy(struct msm_commit *c)
 		kfree(c);
 }
 
+static inline bool _msm_seamless_for_crtc(struct drm_atomic_state *state,
+			struct drm_crtc_state *crtc_state, bool enable)
+{
+	struct drm_connector *connector = NULL;
+	struct drm_connector_state  *conn_state = NULL;
+	int i = 0;
+	int conn_cnt = 0;
+
+	if (msm_is_mode_seamless(&crtc_state->mode) ||
+		msm_is_mode_seamless_vrr(&crtc_state->adjusted_mode))
+		return true;
+
+	if (msm_is_mode_seamless_dms(&crtc_state->adjusted_mode) && !enable)
+		return true;
+
+	if (!crtc_state->mode_changed && crtc_state->connectors_changed) {
+		for_each_connector_in_state(state, connector, conn_state, i) {
+			if ((conn_state->crtc == crtc_state->crtc) ||
+					(connector->state->crtc ==
+					 crtc_state->crtc))
+				conn_cnt++;
+
+			if (MULTIPLE_CONN_DETECTED(conn_cnt))
+				return true;
+		}
+	}
+
+	return false;
+}
+
+static inline bool _msm_seamless_for_conn(struct drm_connector *connector,
+		struct drm_connector_state *old_conn_state, bool enable)
+{
+	if (!old_conn_state || !old_conn_state->crtc)
+		return false;
+
+	if (!old_conn_state->crtc->state->mode_changed &&
+			!old_conn_state->crtc->state->active_changed &&
+			old_conn_state->crtc->state->connectors_changed) {
+		if (old_conn_state->crtc == connector->state->crtc)
+			return true;
+	}
+
+	if (enable)
+		return false;
+
+	if (msm_is_mode_seamless(&connector->encoder->crtc->state->mode))
+		return true;
+
+	if (msm_is_mode_seamless_vrr(
+			&connector->encoder->crtc->state->adjusted_mode))
+		return true;
+
+	if (msm_is_mode_seamless_dms(
+			&connector->encoder->crtc->state->adjusted_mode))
+		return true;
+
+	return false;
+}
+
 static void msm_atomic_wait_for_commit_done(
 		struct drm_device *dev,
 		struct drm_atomic_state *old_state)
@@ -176,14 +240,7 @@ msm_disable_outputs(struct drm_device *dev, struct drm_atomic_state *old_state)
 		if (WARN_ON(!encoder))
 			continue;
 
-		if (msm_is_mode_seamless(
-			&connector->encoder->crtc->state->mode) ||
-			msm_is_mode_seamless_vrr(
-			&connector->encoder->crtc->state->adjusted_mode))
-			continue;
-
-		if (msm_is_mode_seamless_dms(
-			&connector->encoder->crtc->state->adjusted_mode))
+		if (_msm_seamless_for_conn(connector, old_conn_state, false))
 			continue;
 
 		funcs = encoder->helper_private;
@@ -227,11 +284,7 @@ msm_disable_outputs(struct drm_device *dev, struct drm_atomic_state *old_state)
 		if (!old_crtc_state->active)
 			continue;
 
-		if (msm_is_mode_seamless(&crtc->state->mode) ||
-			msm_is_mode_seamless_vrr(&crtc->state->adjusted_mode))
-			continue;
-
-		if (msm_is_mode_seamless_dms(&crtc->state->adjusted_mode))
+		if (_msm_seamless_for_crtc(old_state, crtc->state, false))
 			continue;
 
 		funcs = crtc->helper_private;
@@ -290,8 +343,14 @@ msm_crtc_set_mode(struct drm_device *dev, struct drm_atomic_state *old_state)
 		mode = &new_crtc_state->mode;
 		adjusted_mode = &new_crtc_state->adjusted_mode;
 
-		if (!new_crtc_state->mode_changed)
+		if (!new_crtc_state->mode_changed &&
+				new_crtc_state->connectors_changed) {
+			if (_msm_seamless_for_conn(connector,
+					old_conn_state, false))
+				continue;
+		} else if (!new_crtc_state->mode_changed) {
 			continue;
+		}
 
 		DRM_DEBUG_ATOMIC("modeset on [ENCODER:%d:%s]\n",
 				 encoder->base.id, encoder->name);
@@ -369,8 +428,7 @@ static void msm_atomic_helper_commit_modeset_enables(struct drm_device *dev,
 		if (!crtc->state->active)
 			continue;
 
-		if (msm_is_mode_seamless(&crtc->state->mode) ||
-			msm_is_mode_seamless_vrr(&crtc->state->adjusted_mode))
+		if (_msm_seamless_for_crtc(old_state, crtc->state, true))
 			continue;
 
 		funcs = crtc->helper_private;
@@ -402,20 +460,26 @@ static void msm_atomic_helper_commit_modeset_enables(struct drm_device *dev,
 				    connector->state->crtc->state))
 			continue;
 
+		if (_msm_seamless_for_conn(connector, old_conn_state, true))
+			continue;
+
 		encoder = connector->state->best_encoder;
 		funcs = encoder->helper_private;
 
 		DRM_DEBUG_ATOMIC("enabling [ENCODER:%d:%s]\n",
 				 encoder->base.id, encoder->name);
 
-		lp_mode = sde_connector_get_property(
+		if (connector->state->crtc->state->active_changed) {
+			lp_mode = sde_connector_get_property(
 				connector->state, CONNECTOR_PROP_LP);
-		blank = (lp_mode == SDE_MODE_DPMS_LP1)? MSM_DRM_BLANK_STANDBY : MSM_DRM_BLANK_UNBLANK;
-		notifier_data.data = &blank;
-		notifier_data.id =
-			connector->state->crtc->index;
-		msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK,
+		            blank = (lp_mode == SDE_MODE_DPMS_LP1)? MSM_DRM_BLANK_STANDBY : MSM_DRM_BLANK_UNBLANK;
+			notifier_data.data = &blank;
+			notifier_data.id =
+				connector->state->crtc->index;
+			DRM_DEBUG_ATOMIC("Notify early unblank\n");
+			msm_drm_notifier_call_chain(MSM_DRM_EARLY_EVENT_BLANK,
 					    &notifier_data);
+		}
 		/*
 		 * Each encoder has at most one connector (since we always steal
 		 * it away), so we won't call enable hooks twice.
@@ -452,17 +516,25 @@ static void msm_atomic_helper_commit_modeset_enables(struct drm_device *dev,
 				    connector->state->crtc->state))
 			continue;
 
+		if (_msm_seamless_for_conn(connector, old_conn_state, true))
+			continue;
+
 		encoder = connector->state->best_encoder;
 
 		DRM_DEBUG_ATOMIC("bridge enable enabling [ENCODER:%d:%s]\n",
 				 encoder->base.id, encoder->name);
 
 		drm_bridge_enable(encoder->bridge);
-		lp_mode = sde_connector_get_property(
+
+		if (connector->state->crtc->state->active_changed) {
+		      lp_mode = sde_connector_get_property(
 				connector->state, CONNECTOR_PROP_LP);
-		blank = (lp_mode == SDE_MODE_DPMS_LP1)? MSM_DRM_BLANK_STANDBY : MSM_DRM_BLANK_UNBLANK;
-		msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK,
+		      blank = ((lp_mode == SDE_MODE_DPMS_LP1)&&is_lp1_mode)? MSM_DRM_BLANK_STANDBY : MSM_DRM_BLANK_UNBLANK;
+		      printk("blank is %d \n",blank);
+			DRM_DEBUG_ATOMIC("Notify unblank\n");
+			msm_drm_notifier_call_chain(MSM_DRM_EVENT_BLANK,
 					    &notifier_data);
+		}
 	}
 	SDE_ATRACE_END("msm_enable");
 }

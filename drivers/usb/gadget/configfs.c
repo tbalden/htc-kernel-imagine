@@ -340,6 +340,7 @@ static ssize_t gadget_dev_desc_UDC_store(struct config_item *item,
 		ret = unregister_gadget(gi);
 		if (ret)
 			goto err;
+		kfree(name);
 	} else {
 		if (gi->composite.gadget_driver.udc_name) {
 			ret = -EBUSY;
@@ -1279,9 +1280,9 @@ static void purge_configs_funcs(struct gadget_info *gi)
 
 		cfg = container_of(c, struct config_usb_cfg, c);
 
-		list_for_each_entry_safe(f, tmp, &c->functions, list) {
+		list_for_each_entry_safe_reverse(f, tmp, &c->functions, list) {
 
-			list_move_tail(&f->list, &cfg->func_list);
+			list_move(&f->list, &cfg->func_list);
 			if (f->unbind) {
 				dev_dbg(&gi->cdev.gadget->dev,
 					"unbind function '%s'/%pK\n",
@@ -1746,11 +1747,18 @@ static ssize_t usb_connect2pc_show(struct device *pdev, struct device_attribute 
 	return sprintf(buf, "%s\n", state);
 }
 
+extern ssize_t show_usb_cable_connect(struct device *dev,
+		struct device_attribute *attr, char *buf);
+
+
 static DEVICE_ATTR(usb_connect2pc, S_IRUGO, usb_connect2pc_show, NULL);
+static DEVICE_ATTR(usb_cable_connect, 0444, show_usb_cable_connect, NULL);
+
 
 static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_state,
 	&dev_attr_usb_connect2pc,
+	&dev_attr_usb_cable_connect,
 	NULL
 };
 
@@ -1786,7 +1794,8 @@ static int android_device_create(struct gadget_info *gi)
 		}
 	}
 
-	setup_vendor_info(android_device);
+	if (gadget_index == 1)
+		setup_vendor_info(android_device);
 
 	return 0;
 }

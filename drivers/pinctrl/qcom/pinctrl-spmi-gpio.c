@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014, 2016-2017 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014, 2016-2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -537,7 +537,7 @@ static int pmic_gpio_config_set(struct pinctrl_dev *pctldev, unsigned int pin,
 			pad->pullup = arg;
 			break;
 		case PMIC_GPIO_CONF_STRENGTH:
-			if (arg > PMIC_GPIO_STRENGTH_LOW)
+			if (arg > PMIC_GPIO_STRENGTH_HIGH)
 				return -EINVAL;
 			pad->strength = arg;
 			break;
@@ -679,7 +679,10 @@ int htc_pmic_gpio_dump(struct seq_file *m, int curr_len, char *gpio_buffer)
 		len = 0;
 
 		if (val < 0 || !(val >> PMIC_GPIO_REG_MASTER_EN_SHIFT)) {
-			seq_puts(m, " ---");
+			if (m)
+				seq_puts(m, " ---");
+			else
+				pr_info(" ---");
 		} else {
 			if (pad->input_enabled) {
 				ret = pmic_gpio_read(state, pad, PMIC_MPP_REG_RT_STS);

@@ -7816,6 +7816,7 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 	mutex_init(&(rmi4_data->rmi4_report_mutex));
 	mutex_init(&(rmi4_data->rmi4_io_ctrl_mutex));
 	mutex_init(&(rmi4_data->rmi4_exp_init_mutex));
+	mutex_init(&(rmi4_data->rmi4_notifier_mutex));
 	mutex_init(&(rmi4_data->rmi4_irq_enable_mutex));
 
 	platform_set_drvdata(pdev, rmi4_data);
@@ -8297,13 +8298,15 @@ static int synaptics_rmi4_drm_notifier_cb(struct notifier_block *self,
 				rmi4_data->hw_if->board_data;
 #endif
 
+	pr_info("[DRM][%s-%d] mutex_lock rmi4_notifier_mutex\n",__func__,__LINE__);
+	mutex_lock(&rmi4_data->rmi4_notifier_mutex);
 	if (evdata && evdata->data && rmi4_data) {
 		if (event == MSM_DRM_EARLY_EVENT_BLANK) {
 			transition = evdata->data;
                         synaptics_secure_touch_stop(rmi4_data, 0);
 			pr_info("DRM blank %d, event %ld, id %d\n", *transition, event, evdata->id);
 			if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
-				return 0;
+				goto exit;
 			if (*transition == MSM_DRM_BLANK_UNBLANK ||
 					*transition == MSM_DRM_BLANK_STANDBY ||
 					*transition == MSM_DRM_BLANK_POWERDOWN) {
@@ -8315,7 +8318,7 @@ static int synaptics_rmi4_drm_notifier_cb(struct notifier_block *self,
 			transition = evdata->data;
 			pr_info("DRM blank %d, event %ld, id %d\n", *transition, event, evdata->id);
 			if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
-				return 0;
+				goto exit;
 			if (*transition == MSM_DRM_BLANK_POWERDOWN) {
 #ifdef CONFIG_NANOHUB_TP_SWITCH
 				if (bdata->lcm_reset_seq == 1) {
@@ -8340,7 +8343,7 @@ static int synaptics_rmi4_drm_notifier_cb(struct notifier_block *self,
 			transition = evdata->data;
 			pr_info("DRM blank %d, event %ld, id %d\n", *transition, event, evdata->id);
 			if (evdata->id != MSM_DRM_PRIMARY_DISPLAY)
-				return 0;
+				goto exit;
 			if (*transition == MSM_DRM_BLANK_UNBLANK) {
 #ifdef CONFIG_NANOHUB_TP_SWITCH
 				synaptics_switch_sensor_hub(rmi4_data, SWITCH_TO_CPU);
@@ -8348,10 +8351,15 @@ static int synaptics_rmi4_drm_notifier_cb(struct notifier_block *self,
 				synaptics_rmi4_resume(&rmi4_data->pdev->dev);
 				rmi4_data->aod_mode = false;
 			}
+		}else{
+			transition = evdata->data;
+			pr_info("[Not match]DRM blank %d, event %ld, id %d, aod mode %d\n", *transition, event, evdata->id,rmi4_data->aod_mode);
 		}
 	} else
 		pr_info("FB event %ld\n", event);
-
+exit:
+	pr_info("[DRM][%s-%d] mutex_unlock rmi4_notifier_mutex\n",__func__,__LINE__);
+	mutex_unlock(&rmi4_data->rmi4_notifier_mutex);
 	return 0;
 }
 #endif

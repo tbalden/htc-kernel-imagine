@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -363,7 +363,7 @@ static struct ipa_ep_cfg usb_to_ipa_ep_cfg_deaggr_dis = {
 			sizeof(struct rndis_pkt_hdr),
 		.hdr_a5_mux = false,
 		.hdr_remove_additional = false,
-		.hdr_metadata_reg_valid = false,
+		.hdr_metadata_reg_valid = true,
 	},
 	.hdr_ext = {
 		.hdr_pad_to_alignment = 0,
@@ -410,7 +410,7 @@ static struct ipa_ep_cfg usb_to_ipa_ep_cfg_deaggr_en = {
 		.hdr_ofst_pkt_size = 3 * sizeof(u32),
 		.hdr_a5_mux = false,
 		.hdr_remove_additional = false,
-		.hdr_metadata_reg_valid = false,
+		.hdr_metadata_reg_valid = true,
 	},
 	.hdr_ext = {
 		.hdr_pad_to_alignment = 0,
@@ -457,6 +457,11 @@ struct rndis_pkt_hdr rndis_template_hdr = {
 	.data_len = 0,
 	.zeroes = {0},
 };
+
+static void rndis_ipa_msg_free_cb(void *buff, u32 len, u32 type)
+{
+	kfree(buff);
+}
 
 /**
  * rndis_ipa_init() - create network device and initialize internal
@@ -574,13 +579,15 @@ int rndis_ipa_init(struct ipa_usb_init_params *params)
 		goto fail_set_device_ethernet;
 	}
 	RNDIS_IPA_DEBUG("Device Ethernet address set %pM\n", net->dev_addr);
-
+#ifdef CONFIG_IPA3
 	if (ipa_is_vlan_mode(IPA_VLAN_IF_RNDIS,
 		&rndis_ipa_ctx->is_vlan_mode)) {
 		RNDIS_IPA_ERROR("couldn't acquire vlan mode, is ipa ready?\n");
-		goto fail_get_vlan_mode;
+		goto fail_hdrs_cfg;
 	}
-
+#else
+	rndis_ipa_ctx->is_vlan_mode = 0;
+#endif
 	RNDIS_IPA_DEBUG("is_vlan_mode %d\n", rndis_ipa_ctx->is_vlan_mode);
 
 	result = rndis_ipa_hdrs_cfg
@@ -631,7 +638,6 @@ fail_register_netdev:
 fail_register_tx:
 	rndis_ipa_hdrs_destroy(rndis_ipa_ctx);
 fail_hdrs_cfg:
-fail_get_vlan_mode:
 fail_set_device_ethernet:
 	rndis_ipa_debugfs_destroy(rndis_ipa_ctx);
 fail_netdev_priv:
@@ -681,6 +687,8 @@ int rndis_ipa_pipe_connect_notify(
 	int result;
 	int ret;
 	unsigned long flags;
+	struct ipa_ecm_msg *rndis_msg;
+	struct ipa_msg_meta msg_meta;
 
 	RNDIS_IPA_LOG_ENTRY();
 
@@ -767,6 +775,26 @@ int rndis_ipa_pipe_connect_notify(
 		goto fail;
 	}
 	RNDIS_IPA_DEBUG("netif_carrier_on() was called\n");
+
+	rndis_msg = kzalloc(sizeof(*rndis_msg), GFP_KERNEL);
+	if (!rndis_msg) {
+		result = -ENOMEM;
+		goto fail;
+	}
+
+	memset(&msg_meta, 0, sizeof(struct ipa_msg_meta));
+	msg_meta.msg_type = ECM_CONNECT;
+	msg_meta.msg_len = sizeof(struct ipa_ecm_msg);
+	strlcpy(rndis_msg->name, rndis_ipa_ctx->net->name,
+		IPA_RESOURCE_NAME_MAX);
+	rndis_msg->ifindex = rndis_ipa_ctx->net->ifindex;
+
+	result = ipa_send_msg(&msg_meta, rndis_msg, rndis_ipa_msg_free_cb);
+	if (result) {
+		RNDIS_IPA_ERROR("fail to send ECM_CONNECT for rndis\n");
+		kfree(rndis_msg);
+		goto fail;
+	}
 
 	spin_lock_irqsave(&rndis_ipa_ctx->state_lock, flags);
 	next_state = rndis_ipa_next_state(rndis_ipa_ctx->state,
@@ -1230,6 +1258,8 @@ int rndis_ipa_pipe_disconnect_notify(void *private)
 	int retval;
 	int ret;
 	unsigned long flags;
+	struct ipa_ecm_msg *rndis_msg;
+	struct ipa_msg_meta msg_meta;
 
 	RNDIS_IPA_LOG_ENTRY();
 
@@ -1260,6 +1290,24 @@ int rndis_ipa_pipe_disconnect_notify(void *private)
 
 	netif_carrier_off(rndis_ipa_ctx->net);
 	RNDIS_IPA_DEBUG("carrier_off notification was sent\n");
+
+	rndis_msg = kzalloc(sizeof(*rndis_msg), GFP_KERNEL);
+	if (!rndis_msg)
+		return -ENOMEM;
+
+	memset(&msg_meta, 0, sizeof(struct ipa_msg_meta));
+	msg_meta.msg_type = ECM_DISCONNECT;
+	msg_meta.msg_len = sizeof(struct ipa_ecm_msg);
+	strlcpy(rndis_msg->name, rndis_ipa_ctx->net->name,
+		IPA_RESOURCE_NAME_MAX);
+	rndis_msg->ifindex = rndis_ipa_ctx->net->ifindex;
+
+	retval = ipa_send_msg(&msg_meta, rndis_msg, rndis_ipa_msg_free_cb);
+	if (retval) {
+		RNDIS_IPA_ERROR("fail to send ECM_DISCONNECT for rndis\n");
+		kfree(rndis_msg);
+		return -EPERM;
+	}
 
 	netif_stop_queue(rndis_ipa_ctx->net);
 	RNDIS_IPA_DEBUG("queue stopped\n");
@@ -2025,8 +2073,10 @@ static struct sk_buff *rndis_encapsulate_skb(struct sk_buff *skb,
 	}
 
 	if (rndis_ipa_ctx->is_vlan_mode)
-		if (unlikely(skb->protocol != ETH_P_8021Q))
-			RNDIS_IPA_DEBUG("ether_type != ETH_P_8021Q && vlan\n");
+		if (unlikely(skb->protocol != htons(ETH_P_8021Q)))
+			RNDIS_IPA_DEBUG(
+				"ether_type != ETH_P_8021Q && vlan, prot = 0x%X\n"
+				, skb->protocol);
 
 	/* make room at the head of the SKB to put the RNDIS header */
 	rndis_hdr = (struct rndis_pkt_hdr *)skb_push(skb,
@@ -2180,6 +2230,9 @@ static int rndis_ipa_ep_registers_cfg(
 		ipa_to_usb_ep_cfg.aggr.aggr_byte_limit,
 		ipa_to_usb_ep_cfg.aggr.aggr_time_limit,
 		ipa_to_usb_ep_cfg.aggr.aggr_pkt_limit);
+
+	/* enable hdr_metadata_reg_valid */
+	usb_to_ipa_ep_cfg->hdr.hdr_metadata_reg_valid = true;
 
 	result = ipa_cfg_ep(ipa_to_usb_hdl, &ipa_to_usb_ep_cfg);
 	if (result) {

@@ -11,6 +11,7 @@
  * GNU General Public License for more details.
  *
  */
+#include <linux/delay.h>
 
 
 #if defined(CONFIG_USB_CONFIGFS_UEVENT)
@@ -81,13 +82,14 @@ static ssize_t store_usb_disable_setting(struct device *dev,
 	return count;
 }
 
-static ssize_t show_usb_cable_connect(struct device *dev,
+ssize_t show_usb_cable_connect(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	unsigned length;
 	struct gadget_info *gi = dev_get_drvdata(dev);
 	struct usb_composite_dev *cdev = &gi->cdev;
 	int ret = 0;
+	int i;
 
 	if ((connect2pc == 1) && !usb_disable) {
 		if (cdev && cdev->gadget) {
@@ -96,6 +98,28 @@ static ssize_t show_usb_cable_connect(struct device *dev,
 			else
 				ret = 1;
 		}
+
+		if (ret == 0) {
+			pr_info("htc_attr waiting cdev->gadget to true\n");
+			for (i = 0; i < 10; i++) {
+				if (!cdev->gadget) {
+					msleep(50);
+				} else {
+					if (cdev->gadget->speed == USB_SPEED_SUPER)
+						ret = 2;
+					else
+						ret = 1;
+
+					pr_info("htc_attr break  i=%d ret=%d\n", i, ret);
+					break;
+
+				}
+			}
+			if (ret == 0) {
+				pr_err("htc_attr usb_cable_connect error\n");
+			}
+		}
+
 	}
 	length = sprintf(buf, "%d", ret);
 	return length;
@@ -165,7 +189,7 @@ static ssize_t show_hcmd_request(struct device *dev,
 
 static DEVICE_ATTR(usb_ac_cable_status, 0444, show_usb_ac_cable_status, NULL);
 static DEVICE_ATTR(usb_disable, 0664, show_usb_disable_setting, store_usb_disable_setting);
-static DEVICE_ATTR(usb_cable_connect, 0444, show_usb_cable_connect, NULL);
+//static DEVICE_ATTR(usb_cable_connect, 0444, show_usb_cable_connect, NULL);
 static DEVICE_ATTR(pd_cap, 0444, show_pd_cap, NULL);
 static DEVICE_ATTR(os_type, 0444, show_os_type, NULL);
 static DEVICE_ATTR(hcmd, 0440, show_hcmd_request, NULL);
@@ -173,7 +197,7 @@ static DEVICE_ATTR(hcmd, 0440, show_hcmd_request, NULL);
 static __maybe_unused struct attribute *android_htc_usb_attributes[] = {
 	&dev_attr_usb_ac_cable_status.attr,
 	&dev_attr_usb_disable.attr,
-	&dev_attr_usb_cable_connect.attr,
+	//&dev_attr_usb_cable_connect.attr,
 	&dev_attr_pd_cap.attr,
 	&dev_attr_os_type.attr,
 	&dev_attr_hcmd.attr,

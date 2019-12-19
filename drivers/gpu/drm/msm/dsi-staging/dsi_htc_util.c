@@ -1170,7 +1170,7 @@ bool htc_is_burst_bl_on(struct dsi_panel *panel)
 
 	if (panel->bl_config.burst_on_level &&
 		htc_class_attr_bklt_burst_switch.cur_value >= panel->bl_config.burst_on_level){
-		return true;
+		return false;
 	}
 
 	return false;

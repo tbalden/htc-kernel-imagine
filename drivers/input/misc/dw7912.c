@@ -1356,7 +1356,7 @@ int real_time_playback(struct dw7912_priv *p, u8 *data, u32 size)
 #ifdef CONFIG_INPUT_DW7912_VOLTAGE_SWITCH_WA
 void haptics_voltage_switch(bool enabled) {
 	struct dw7912_priv *pDW = Gdw7912;
-	u8 *cpy_header = NULL;
+	u8 cpy_header[8] = {0};
 
 	if(is_bc_running()) {
 		gprintk("BC status is running! Skip vibrator access!");
@@ -1381,7 +1381,6 @@ void haptics_voltage_switch(bool enabled) {
 		boost_reset = false;
 #endif
 		gprintk("VS: %x %x\n", pDW->sideKeys_Voltage, pDW->notification_Voltage);
-		cpy_header = kzalloc(sizeof(u8) * 8, GFP_KERNEL);
 		memcpy(cpy_header, mem_header1, 8);
 		cpy_header[7] = pDW->sideKeys_Voltage;
 		if (memory_mode_play(pDW, cpy_header, mem_wave1, sizeof(mem_wave1)) < 0 ) {

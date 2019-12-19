@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, 2017-2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -24,13 +24,39 @@
 #endif
 
 #define IPA_MHI_DRV_NAME "ipa_mhi_client"
+
 #define IPA_MHI_DBG(fmt, args...) \
-	pr_debug(IPA_MHI_DRV_NAME " %s:%d " fmt, \
-		 __func__, __LINE__, ## args)
+	do { \
+		pr_debug(IPA_MHI_DRV_NAME " %s:%d " fmt, \
+			__func__, __LINE__, ## args); \
+		IPA_IPC_LOGGING(ipa_get_ipc_logbuf(), \
+			IPA_MHI_DRV_NAME " %s:%d " fmt, ## args); \
+		IPA_IPC_LOGGING(ipa_get_ipc_logbuf_low(), \
+			IPA_MHI_DRV_NAME " %s:%d " fmt, ## args); \
+	} while (0)
+
+#define IPA_MHI_DBG_LOW(fmt, args...) \
+	do { \
+		pr_debug(IPA_MHI_DRV_NAME " %s:%d " fmt, \
+			__func__, __LINE__, ## args); \
+		IPA_IPC_LOGGING(ipa_get_ipc_logbuf_low(), \
+			IPA_MHI_DRV_NAME " %s:%d " fmt, ## args); \
+	} while (0)
+
+
 #define IPA_MHI_ERR(fmt, args...) \
-	pr_err(IPA_MHI_DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args)
+	do { \
+		pr_err(IPA_MHI_DRV_NAME " %s:%d " fmt, \
+			__func__, __LINE__, ## args); \
+		IPA_IPC_LOGGING(ipa_get_ipc_logbuf(), \
+				IPA_MHI_DRV_NAME " %s:%d " fmt, ## args); \
+		IPA_IPC_LOGGING(ipa_get_ipc_logbuf_low(), \
+				IPA_MHI_DRV_NAME " %s:%d " fmt, ## args); \
+	} while (0)
+
 #define IPA_MHI_FUNC_ENTRY() \
 	IPA_MHI_DBG("ENTRY\n")
+
 #define IPA_MHI_FUNC_EXIT() \
 	IPA_MHI_DBG("EXIT\n")
 
@@ -2120,6 +2146,15 @@ int ipa_mhi_suspend(bool force)
 		IPA_MHI_ERR("ipa_mhi_set_state failed %d\n", res);
 		return res;
 	}
+
+	res = ipa_mhi_suspend_dl(force);
+	if (res) {
+		IPA_MHI_ERR("ipa_mhi_suspend_dl failed %d\n", res);
+		goto fail_suspend_dl_channel;
+	}
+
+	usleep_range(IPA_MHI_SUSPEND_SLEEP_MIN, IPA_MHI_SUSPEND_SLEEP_MAX);
+
 	res = ipa_mhi_suspend_ul(force, &empty, &force_clear);
 	if (res) {
 		IPA_MHI_ERR("ipa_mhi_suspend_ul failed %d\n", res);
@@ -2164,12 +2199,6 @@ int ipa_mhi_suspend(bool force)
 #endif
 	usleep_range(IPA_MHI_SUSPEND_SLEEP_MIN, IPA_MHI_SUSPEND_SLEEP_MAX);
 
-	res = ipa_mhi_suspend_dl(force);
-	if (res) {
-		IPA_MHI_ERR("ipa_mhi_suspend_dl failed %d\n", res);
-		goto fail_suspend_dl_channel;
-	}
-
 	if (!empty)
 		ipa_set_tag_process_before_gating(false);
 
@@ -2183,7 +2212,6 @@ int ipa_mhi_suspend(bool force)
 	IPA_MHI_FUNC_EXIT();
 	return 0;
 
-fail_suspend_dl_channel:
 fail_release_cons:
 	if (!ipa_pm_is_used())
 	ipa_mhi_request_prod();
@@ -2199,7 +2227,6 @@ fail_deactivate_pm:
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 fail_suspend_ul_channel:
 	ipa_mhi_resume_channels(true, ipa_mhi_client_ctx->ul_channels);
-	ipa_mhi_set_state(IPA_MHI_STATE_STARTED);
 	if (force_clear) {
 		if (
 		ipa_mhi_disable_force_clear(ipa_mhi_client_ctx->qmi_req_id)) {
@@ -2209,6 +2236,9 @@ fail_suspend_ul_channel:
 		IPA_MHI_DBG("force clear datapath disabled\n");
 		ipa_mhi_client_ctx->qmi_req_id++;
 	}
+fail_suspend_dl_channel:
+	ipa_mhi_resume_channels(true, ipa_mhi_client_ctx->dl_channels);
+	ipa_mhi_set_state(IPA_MHI_STATE_STARTED);
 	return res;
 }
 

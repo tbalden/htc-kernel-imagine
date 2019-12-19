@@ -275,12 +275,14 @@ static int stmvl53l0_probe(struct i2c_client *client,
 
     vl53l0_data = kzalloc(sizeof(struct stmvl53l0_data), GFP_KERNEL);
     if (!vl53l0_data) {
-        rc = -ENOMEM;
-        return rc;
+        goto vl53l0_data_kzalloc_fail;
     }
     if (vl53l0_data) {
         vl53l0_data->client_object = kzalloc(sizeof(struct i2c_data), GFP_KERNEL);
         i2c_object = (struct i2c_data *)vl53l0_data->client_object;
+    }
+    if (!i2c_object) {
+        goto i2c_object_kzalloc_fail;
     }
     i2c_object->client = client;
     vl53l0_data->sensor_dev = &client->dev;
@@ -288,6 +290,12 @@ static int stmvl53l0_probe(struct i2c_client *client,
 
     async_schedule(stmvl53l0_probe_async, NULL);
     vl53l0_dbgmsg("Success--\n");
+    return rc;
+
+i2c_object_kzalloc_fail:
+    kfree(vl53l0_data);
+vl53l0_data_kzalloc_fail:
+    rc = -ENOMEM;
     return rc;
 }
 
