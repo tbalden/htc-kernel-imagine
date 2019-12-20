@@ -1455,7 +1455,7 @@ static void rgb_blink_on_charge_async(void) {
 * will set multicolor RG led, or at 100% a gently blinking green led.
 * Will only do the operations if level changed or just started to charge...
 */
-static void led_multi_color_charge_level(int level, bool force) {
+static void led_multi_color_charge_level(int level, bool force,const char* func) {
 
 	static int last_level = 0;
 	int level_div = level / 5;
@@ -1464,7 +1464,7 @@ static void led_multi_color_charge_level(int level, bool force) {
 	int red_coeff = 255 - (us_level); // red be a bit more always, except on FULL charge ( 255 - 220 -> Min = 25, except on full where it is 1 )
 	int green_coeff = 235 - red_coeff; // green be a bit less always, except on FULL charge ( Green max is 220, min 1 - except on full where its 255)
 
-	I(" %s charging notif occured for rgb: %d screen_on_early %d\n",__func__,charging_notification_occured_for_rgb, screen_on_early);
+	I(" %s charging notif occured for rgb: %d screen_on_early %d level %d last_level %d force %d supposedly_charging %d last_charge_state %d func: %s \n",__func__,charging_notification_occured_for_rgb, screen_on_early, level, last_level, force, supposedly_charging, last_charge_state, func);
 
 	if (charging_notification_occured_for_rgb && !screen_on_early) {
 		// instead of charge color, call notification blinking for RGB led
@@ -2010,18 +2010,25 @@ static void multicolor_work_func(struct work_struct *work)
 	uint8_t data = 0x00;
         char data1[1] = {0};
         int i;
+#if 1
+	uint8_t r,g;
+#endif
 
 	if(!client)
 		return;
 
 	ldata = container_of(work, struct lp5562_led, led_work_multicolor);
-	I(" %s , Mode = %x\n" , __func__, ldata->Mode);
+	I(" %s , Mode = %x Red %d Green %d\n" , __func__, ldata->Mode,ldata->Red,ldata->Green);
+#if 1
+	r = ldata->Red;
+	g = ldata->Green;
+#endif
 
 	if (ldata->Mode > 1 && ldata->Mode <= 5)
 		lp5562_led_enable(client, 1);
 	else if (ldata->Mode == 1)
 		lp5562_led_enable(client, 0);
-	if (ldata->Red) {
+	if (r) {
 		rgb_enable = 1;
 		data = (u8)gCurrent_param;
 		ret = i2c_write_block(client, R_CURRENT_CONTROL, &data, 1);
@@ -2029,7 +2036,7 @@ static void multicolor_work_func(struct work_struct *work)
 		data = (u8)0;
 		ret = i2c_write_block(client, R_CURRENT_CONTROL, &data, 1);
 	}
-	if (ldata->Green) {
+	if (g) {
 		rgb_enable = 1;
 		data = (u8)gCurrent_param;
 		ret = i2c_write_block(client, G_CURRENT_CONTROL, &data, 1);
@@ -2047,7 +2054,7 @@ static void multicolor_work_func(struct work_struct *work)
 		ret = i2c_write_block(client, B_CURRENT_CONTROL, &data, 1);
 	}
 #endif
-	if (ldata->Mode == 0 || (!ldata->Red && !ldata->Green && !ldata->Blue)) {
+	if (ldata->Mode == 0 || (!r && !g && !ldata->Blue)) {
 		rgb_enable = 0;
 		lp5562_led_off(client);
 	} else if (ldata->Mode == 1) {  /* === set red, green, blue direct control === */
@@ -2055,8 +2062,9 @@ static void multicolor_work_func(struct work_struct *work)
 #if 1
 		clear_rgb_notification_on_charger(__func__);
 #endif
-		ret = i2c_write_block(client, R_PWM_CONTROL, &ldata->Red, 1);
-		ret = i2c_write_block(client, G_PWM_CONTROL, &ldata->Green, 1);
+		I(" %s , Setting i2c --> Mode = %x Red %d Green %d\n" , __func__, ldata->Mode, r, g);
+		ret = i2c_write_block(client, R_PWM_CONTROL, &r, 1);
+		ret = i2c_write_block(client, G_PWM_CONTROL, &g, 1);
 #ifdef LP5562_BLUE_LED
 		ret = i2c_write_block(client, B_PWM_CONTROL, &ldata->Blue, 1);
 #endif
@@ -2444,7 +2452,7 @@ static ssize_t lp5562_led_multi_color_store(struct device *dev,
 	if (get_bln_rgb_batt_colored() && supposedly_charging && first_level_registered) {
 		// if it's supposedly charging and first level registered from HTC battery, we can go and set charge level color mix instead of normal multicolor setting later...
 		spin_unlock(&led_data_lock);
-		led_multi_color_charge_level(charge_level, false);
+		led_multi_color_charge_level(charge_level, false, __func__);
 		// and return so color is not overwritten...
 		return count;
 	}
@@ -2910,7 +2918,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		if (charging_notification_occured_for_rgb && charging && get_bln_pulse_rgb_blink_on_charger() && ntf_wake_by_user()) {
 			clear_charging_notification_occured_for_rgb(__func__);
 			// start charge color, to cancel RGB blinking
-			led_multi_color_charge_level(charge_level, true);
+	                I("%s triggering color change to multicolor led level event_wake... %d\n",__func__,charge_level);
+			led_multi_color_charge_level(charge_level, true, __func__);
 		}
 		I("screen on\n");
 	} else
@@ -2958,8 +2967,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		        charge_level = num_param;
 		        if (get_bln_rgb_batt_colored() && charging && supposedly_charging) {
 		                // TRIGGER COLOR CHANGE of led
-		                I("%s triggering color change to multicolor led %d\n",__func__,charge_level);
-		                led_multi_color_charge_level(charge_level, false);
+		                I("%s triggering color change to multicolor led event_charge_level %d\n",__func__,charge_level);
+		                led_multi_color_charge_level(charge_level, false, __func__);
 		        }
 		        first_level_registered = 1;
                 }
@@ -2969,7 +2978,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 			if (charging && get_bln_pulse_rgb_blink_on_charger() && ntf_wake_by_user()) {
 				clear_charging_notification_occured_for_rgb(__func__); // if user wakes phone clear this flag, otherwise it will keep blinking, even when user dismisses a notif
 				// start charge color, to cancel RGB blinking
-				led_multi_color_charge_level(charge_level, true);
+		                I("%s triggering color change to multicolor led level event_input %d\n",__func__,charge_level);
+				led_multi_color_charge_level(charge_level, true,__func__);
 			}
 		}
 		smart_set_last_user_activity_time();
@@ -2996,7 +3006,8 @@ static void ntf_listener(char* event, int num_param, char* str_param) {
 		                if (screen_on && charging && get_bln_pulse_rgb_blink_on_charger() && ntf_wake_by_user()) {
 		                        clear_charging_notification_occured_for_rgb(__func__); // if user wakes phone clear this flag, otherwise it will keep blinking, even when user dismisses a notif
 		                        // start charge color, to cancel RGB blinking
-		                        led_multi_color_charge_level(charge_level, true);
+			                I("%s triggering color change to multicolor led level event_charge_state %d\n",__func__,charge_level);
+		                        led_multi_color_charge_level(charge_level, true,__func__);
 		                }
 		        }
 		//<---->set_last_input_event(__func__);
