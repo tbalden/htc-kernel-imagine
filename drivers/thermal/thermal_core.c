@@ -1285,7 +1285,7 @@ static DEVICE_ATTR(passive_delay, 0644, passive_delay_show,
 static DEVICE_ATTR(polling_delay, 0644, polling_delay_show,
 			polling_delay_store);
 //For CCC certification solution
-static DEVICE_ATTR(temp_notify_ccc, S_IRUSR | S_IWUSR, NULL, temp_notify_ccc_store);
+static DEVICE_ATTR(temp_notify_ccc, S_IWUSR, NULL, temp_notify_ccc_store);
 
 /* sys I/F for cooling device */
 #define to_cooling_device(_dev)	\
